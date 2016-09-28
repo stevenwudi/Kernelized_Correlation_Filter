@@ -15,8 +15,6 @@ import cv2
 import numpy as np
 from hog import hog
 import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.interactive(False)
 
 
 class KCFTracker:
@@ -40,8 +38,11 @@ class KCFTracker:
         self.x = []
         self.alphaf = []
         self.xf = []
+        self.yf = []
+        self.im_crop = []
         self.response = []
         self.target_out = []
+        self.target_sz = []
         self.vert_delta = 0
         self.horiz_delta = 0
 
@@ -51,32 +52,31 @@ class KCFTracker:
             self.feature_bandwidth_sigma = 0.2
             self.cell_size = 1
         elif self.feature_type == 'hog':
-            self.adaptation_rate = 0.02 # linear interpolation factor for adaptation
+            self.adaptation_rate = 0.02  # linear interpolation factor for adaptation
             self.bin_num = 31
             self.cell_size = 4
             self.feature_bandwidth_sigma = 0.5
 
     def train(self, im, pos, target_sz):
         """
-        :param image: image should be of 3 dimension: M*N*C
+        :param im: image should be of 3 dimension: M*N*C
         :param pos: the centre position of the target
         :param target_sz: target size
         """
-
         self.pos = pos
         self.target_sz = target_sz
         # desired padded input, proportional to input target size
-        self.patch_size = np.floor(target_sz * (1 + self.padding)/self.cell_size)
+        self.patch_size = np.floor(target_sz * (1 + self.padding))
         # desired output (gaussian shaped), bandwidth proportional to target size
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
-        grid_y = np.arange(self.patch_size[0]) - np.floor(self.patch_size[0]/2)
-        grid_x = np.arange(self.patch_size[1]) - np.floor(self.patch_size[1]/2)
+        grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
+        grid_x = np.arange(np.floor(self.patch_size[1]/self.cell_size)) - np.floor(self.patch_size[1]/(2*self.cell_size))
         rs, cs = np.meshgrid(grid_x, grid_y)
         y = np.exp(-0.5 / self.output_sigma ** 2 * (rs ** 2 + cs ** 2))
         self.yf = self.fft2(y)
 
         # store pre-computed cosine window
-        self.cos_window = np.outer(np.hanning(self.patch_size[0]), np.hanning(self.patch_size[1]))
+        self.cos_window = np.outer(np.hanning(self.yf.shape[0]), np.hanning(self.yf.shape[1]))
 
         # extract and pre-process subwindow
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
@@ -90,10 +90,7 @@ class KCFTracker:
         """
         Note: we assume the target does not change in scale, hence there is no target size
 
-        :param image: image should be of 3 dimension: M*N*C
-        :param pos: the centre position of the target
-        :param target_sz: target size
-        :param x:
+        :param im: image should be of 3 dimension: M*N*C
         :return:
         """
 
@@ -110,12 +107,7 @@ class KCFTracker:
         # (this is discussed in the paper Fig. 6). The response map wrap around cyclically.
         v_centre, h_centre = np.unravel_index(self.response.argmax(), self.response.shape)
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
-        # if vert_delta > self.response.shape[0]/2:
-        #     vert_delta = vert_delta - self.response.shape[0]
-        # if horiz_delta > self.response.shape[1]/2:
-        #     horiz_delta = horiz_delta - self.response.shape[1]
-
-        self.pos = self.pos + self.cell_size * [self.vert_delta, self.horiz_delta]
+        self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
 
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train
@@ -149,14 +141,14 @@ class KCFTracker:
         :return:
         """
         N = xf.shape[0]*xf.shape[1]
-        xx = np.dot(x.flatten().transpose(), x.flatten()) # squared norm of x
+        xx = np.dot(x.flatten().transpose(), x.flatten())  # squared norm of x
 
         if zf is None:
             # auto-correlation of x
             zf = xf
             zz = xx
         else:
-            zz = np.dot(z.flatten().transpose(), z.flatten()) # squared norm of y
+            zz = np.dot(z.flatten().transpose(), z.flatten())  # squared norm of y
 
         xyf = np.multiply(zf, np.conj(xf))
         if self.feature_type == 'raw':
@@ -212,15 +204,8 @@ class KCFTracker:
         :param x: M*N*C the first two dimensions are used for Fast Fourier Transform
         :return:  M*N*C the FFT2 of the first two dimension
         """
-        if len(x.shape)==2:
-            return np.fft.fft2(x)
-        else:
-            xf = np.zeros(x.shape, dtype=complex)
-            for i in range(x.shape[-1]):
-                xf[:,:,i] = np.fft.fft2(x[:,:,i])
+        return np.fft.fft2(x, axes=(0, 1))
 
-            return xf
-        #return np.fft.fft(np.fft.fft(x, axis=0), axis=1)
 
     def get_features(self, cos_window):
         """
@@ -361,11 +346,8 @@ def show_precision(positions, ground_truth, title):
     a title string.
     """
     import pylab
-
     print("Evaluating tracking results.")
-
     pylab.ioff()  # interactive mode off
-
     max_threshold = 50  # used for graphs in the paper
 
     if positions.shape[0] != ground_truth.shape[0]:
@@ -376,12 +358,12 @@ def show_precision(positions, ground_truth, title):
     # calculate distances to ground truth over all frames
     delta = positions - ground_truth
     distances = pylab.sqrt((delta[:, 0]**2) + (delta[:, 1]**2))
-    #distances[pylab.isnan(distances)] = []
 
     # compute precisions
     precisions = pylab.zeros((max_threshold, 1), dtype=float)
     for p in range(max_threshold):
         precisions[p] = pylab.sum(distances <= p, dtype=float) / len(distances)
+    print("Representation score at 20 pixels: %f" % precisions[20])
 
     if False:
         pylab.figure()
@@ -398,86 +380,41 @@ def show_precision(positions, ground_truth, title):
     pylab.ylabel("Precision")
 
     pylab.show()
-    return
+    return precisions
 
 
-def plot_tracking(frame, pos, target_sz, im, ground_truth):
+def plot_tracking(frame, img_rgb, tracker):
+    from matplotlib.patches import Rectangle
+    plt.figure(1)
+    plt.clf()
 
-    global \
-        tracking_figure, tracking_figure_title, tracking_figure_axes, \
-        tracking_rectangle, gt_point, \
-        z_figure_axes, response_figure_axes
+    tracking_figure_axes = plt.subplot(221)
+    tracking_rect = Rectangle(
+        xy=(tracker.pos[1]-tracker.target_sz[1]/2, tracker.pos[0]-tracker.target_sz[0]/2),
+        width=tracker.target_sz[1],
+        height=tracker.target_sz[0],
+        facecolor='none',
+        edgecolor='r',
+        )
+    tracking_figure_axes.add_patch(tracking_rect)
+    plt.imshow(img_rgb)
+    plt.title('frame: %d' % frame)
 
-    timeout = 1e-6
-    #timeout = 0.05  # uncomment to run slower
-    if frame == 0:
-        #pylab.ion()  # interactive mode on
-        tracking_figure = pylab.figure()
-        gs = pylab.GridSpec(1, 3, width_ratios=[3, 1, 1])
+    plt.subplot(222)
+    plt.imshow(tracker.im_crop)
+    plt.title('previous target pos image')
 
-        tracking_figure_axes = tracking_figure.add_subplot(gs[0])
-        tracking_figure_axes.set_title("Tracked object (and ground truth)")
+    plt.subplot(223)
+    plt.imshow(tracker.x)
+    plt.title('Feature used is %s' % tracker.feature_type)
 
-        z_figure_axes = tracking_figure.add_subplot(gs[1])
-        z_figure_axes.set_title("Template")
+    plt.subplot(224)
+    plt.imshow(tracker.response)
+    plt.title('response')
+    plt.colorbar()
 
-        response_figure_axes = tracking_figure.add_subplot(gs[2])
-        response_figure_axes.set_title("Response")
-
-        tracking_rectangle = pylab.Rectangle((0, 0), 0, 0)
-        tracking_rectangle.set_color((1, 0, 0, 0.5))
-        tracking_figure_axes.add_patch(tracking_rectangle)
-
-        gt_point = pylab.Circle((0, 0), radius=5)
-        gt_point.set_color((0, 0, 1, 0.5))
-        tracking_figure_axes.add_patch(gt_point)
-
-        tracking_figure_title = tracking_figure.suptitle("")
-
-        pylab.show(block=False)
-
-    elif tracking_figure is None:
-        return  # we simply go faster by skipping the drawing
-    elif not pylab.fignum_exists(tracking_figure.number):
-        #print("Drawing window closed, end of game. "
-        #      "Have a nice day !")
-        #sys.exit()
-        print("From now on drawing will be omitted, "
-              "so that computation goes faster")
-        tracking_figure = None
-        return
-
-    global z, response
-    tracking_figure_axes.imshow(im, cmap=pylab.cm.gray)
-
-    rect_y, rect_x = tuple(pos - target_sz/2.0)
-    rect_height, rect_width = target_sz
-    tracking_rectangle.set_xy((rect_x, rect_y))
-    tracking_rectangle.set_width(rect_width)
-    tracking_rectangle.set_height(rect_height)
-
-    if len(ground_truth) > 0:
-        gt = ground_truth[frame]
-        gt_y, gt_x = gt
-        gt_point.center = (gt_x, gt_y)
-
-    if z is not None:
-        z_figure_axes.imshow(z, cmap=pylab.cm.hot)
-
-    if response is not None:
-        response_figure_axes.imshow(response, cmap=pylab.cm.hot)
-
-    tracking_figure_title.set_text("Frame %i (out of %i)"
-                                   % (frame + 1, len(ground_truth)))
-
-    if debug and False and (frame % 1) == 0:
-        print("Tracked pos ==", pos)
-
-    #tracking_figure.canvas.draw()  # update
-    pylab.draw()
-    pylab.waitforbuttonpress(timeout=timeout)
-
-    return
+    plt.draw()
+    plt.waitforbuttonpress(1)
 
 
 def track(args):
@@ -493,10 +430,8 @@ def track(args):
     total_time = 0
     start_time = time.time()
     for frame, image_filename in enumerate(img_files):
-        # load image
         image_path = os.path.join(video_path, image_filename)
         img_rgb = cv2.imread(image_path)
-        # img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
 
         if frame == 0:
             tracker.train(img_rgb, pos, target_sz)
@@ -504,42 +439,34 @@ def track(args):
             pos = tracker.detect(img_rgb)
             positions[frame, :] = pos
 
-
-
         print("Frame ==", frame)
-        print(' vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
+        print('vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
         print("pos", pos)
         print("gt", ground_truth[frame])
         print("\n")
 
-        args.debug = False
+        args.debug = True
         if args.debug:
-            # various plot
-            plt.figure(1)
-
-            plt.subplot(221)
-            plt.imshow(img_rgb)
-            plt.title('frame: %d' % frame)
-
-            plt.subplot(222)
-            plt.imshow(tracker.im_crop)
-            plt.title('previous target pos image')
-
-
-            plt.subplot(223)
-            plt.imshow(tracker.response)
-            plt.title('response')
-            if frame == 1:
-                plt.colorbar()
-
-            #plt.show(block=True)
+            plot_tracking(frame, img_rgb, tracker)
 
     total_time += time.time() - start_time
     print("Frames-per-second:",  len(img_files) / total_time)
 
     title = os.path.basename(os.path.normpath(args.video_path))
     if len(ground_truth) > 0:
-        show_precision(positions, ground_truth, title)
+        precisions = show_precision(positions, ground_truth, title)
+
+
+    # spatial_bandwidth_sigma_factor
+    # 1/float(10): Representation score at 20 pixels: 0.386301
+    # 1/float(16): Representation score at 20 pixels: 0.641096
+    # What the fuck!
+
+    # lambda:
+    # 1e-4: Representation score at 20 pixels: 0.641096
+    # 1e-2: Representation score at 20 pixels: 0.583562
+
+    # Representation score at 20 pixels: 0.621918 (Old one)
 
 
 def main():
