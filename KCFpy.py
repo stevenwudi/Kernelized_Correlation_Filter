@@ -1,24 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 """
 This is a python reimplementation of the open source tracker in
-http://www2.isr.uc.pt/~henriques/circulant/index.html
-
+High-Speed Tracking with Kernelized Correlation Filters
+João F. Henriques, Rui Caseiro, Pedro Martins, and Jorge Batista, tPAMI 2015
 modified by Di Wu
 """
-
-from __future__ import print_function
 
 import os
 import glob
 import time
 import argparse
+import cv2
+import numpy as np
+from hog import hog
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.interactive(False)
 
 
-class CirculantMatrixTracker:
-
-    def __init__(self, feature_type='hog'):
+class KCFTracker:
+    def __init__(self, feature_type='raw'):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -27,30 +29,223 @@ class CirculantMatrixTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self. padding = 1.5  # extra area surrounding the target
-        self.lambda_value = 1e-2  # regularization
+        self.padding = 1.  # extra area surrounding the target
+        self.lambda_value = 1e-4  # regularization
+        self.spatial_bandwidth_sigma_factor = 1 / float(16)
+        self.feature_type = feature_type
+        self.patch_size = []
+        self.output_sigma = []
+        self.cos_window = []
+        self.pos = []
+        self.x = []
+        self.alphaf = []
+        self.xf = []
+        self.response = []
+        self.target_out = []
+        self.vert_delta = 0
+        self.horiz_delta = 0
 
-        # self.output_sigma_factor = 1 / float(16) #spatial bandwidth (proportional to target)
-        # self.sigma = 0.2  # gaussian kernel bandwidth
-        # # linear interpolation factor for adaptation
-        # self.interpolation_factor = 0.075
+        # following is set according to Table 2:
+        if self.feature_type == 'raw':
+            self.adaptation_rate = 0.075  # linear interpolation factor for adaptation
+            self.feature_bandwidth_sigma = 0.2
+            self.cell_size = 1
+        elif self.feature_type == 'hog':
+            self.adaptation_rate = 0.02 # linear interpolation factor for adaptation
+            self.bin_num = 31
+            self.cell_size = 4
+            self.feature_bandwidth_sigma = 0.5
 
-    def find(self, image):
+    def train(self, im, pos, target_sz):
         """
-        Will return the x/y coordinates where the object was found,
-        and the score
+        :param image: image should be of 3 dimension: M*N*C
+        :param pos: the centre position of the target
+        :param target_sz: target size
         """
 
-        return
+        self.pos = pos
+        self.target_sz = target_sz
+        # desired padded input, proportional to input target size
+        self.patch_size = np.floor(target_sz * (1 + self.padding)/self.cell_size)
+        # desired output (gaussian shaped), bandwidth proportional to target size
+        self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
+        grid_y = np.arange(self.patch_size[0]) - np.floor(self.patch_size[0]/2)
+        grid_x = np.arange(self.patch_size[1]) - np.floor(self.patch_size[1]/2)
+        rs, cs = np.meshgrid(grid_x, grid_y)
+        y = np.exp(-0.5 / self.output_sigma ** 2 * (rs ** 2 + cs ** 2))
+        self.yf = self.fft2(y)
 
-    def update_template(self, new_example, forget_factor=1):
+        # store pre-computed cosine window
+        self.cos_window = np.outer(np.hanning(self.patch_size[0]), np.hanning(self.patch_size[1]))
+
+        # extract and pre-process subwindow
+        self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+        self.x = self.get_features(cos_window=self.cos_window)
+        self.xf = self.fft2(self.x)
+        k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
+        self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
+        self.response = np.real(np.fft.ifft2(np.multiply(self.alphaf, self.fft2(k))))
+
+    def detect(self, im):
         """
-        Update the tracking template,
-        new_example is expected to match the size of
-        the example provided to the constructor
+        Note: we assume the target does not change in scale, hence there is no target size
+
+        :param image: image should be of 3 dimension: M*N*C
+        :param pos: the centre position of the target
+        :param target_sz: target size
+        :param x:
+        :return:
         """
 
-        return
+        # extract and pre-process subwindow
+        self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+        z = self.get_features(cos_window=self.cos_window)
+        zf = self.fft2(z)
+        k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x, zf, z)
+        kf = self.fft2(k)
+        self.response = np.real(np.fft.ifft2(np.multiply(self.alphaf, kf)))
+
+        # target location is at the maximum response. We must take into account the fact that, if
+        # the target doesn't move, the peak will appear at the top-left corner, not at the centre
+        # (this is discussed in the paper Fig. 6). The response map wrap around cyclically.
+        v_centre, h_centre = np.unravel_index(self.response.argmax(), self.response.shape)
+        self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
+        # if vert_delta > self.response.shape[0]/2:
+        #     vert_delta = vert_delta - self.response.shape[0]
+        # if horiz_delta > self.response.shape[1]/2:
+        #     horiz_delta = horiz_delta - self.response.shape[1]
+
+        self.pos = self.pos + self.cell_size * [self.vert_delta, self.horiz_delta]
+
+        #########################################
+        # we need to train the tracker again here, it's almost the replicate of train
+        #########################################
+        self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+        x_new = self.get_features(cos_window=self.cos_window)
+        xf_new = self.fft2(x_new)
+        k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new, x_new)
+        kf = self.fft2(k)
+        alphaf_new = np.divide(self.yf, kf + self.lambda_value)
+
+        self.x = (1 - self.adaptation_rate) * self.x + self.adaptation_rate * x_new
+        self.xf = (1 - self.adaptation_rate) * self.xf + self.adaptation_rate * xf_new
+        self.alphaf = (1-self.adaptation_rate) * self.alphaf + self.adaptation_rate * alphaf_new
+
+        return self.pos
+
+    def dense_gauss_kernel(self, sigma, xf, x, zf=None, z=None):
+        """
+        Gaussian Kernel with dense sampling.
+        Evaluates a gaussian kernel with bandwidth SIGMA for all displacements
+        between input images X and Y, which must both be MxN. They must also
+        be periodic (ie., pre-processed with a cosine window). The result is
+        an MxN map of responses.
+
+        If X and Y are the same, ommit the third parameter to re-use some
+        values, which is faster.
+        :param sigma: feature bandwidth sigma
+        :param x:
+        :param y: if y is None, then we calculate the auto-correlation
+        :return:
+        """
+        N = xf.shape[0]*xf.shape[1]
+        xx = np.dot(x.flatten().transpose(), x.flatten()) # squared norm of x
+
+        if zf is None:
+            # auto-correlation of x
+            zf = xf
+            zz = xx
+        else:
+            zz = np.dot(z.flatten().transpose(), z.flatten()) # squared norm of y
+
+        xyf = np.multiply(zf, np.conj(xf))
+        if self.feature_type == 'raw':
+            xyf_ifft = np.fft.ifft2(xyf)
+        elif self.feature_type == 'hog':
+            xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
+
+        row_shift, col_shift = np.floor(np.array(xyf_ifft.shape) / 2).astype(int)
+        xy_complex = np.roll(xyf_ifft, row_shift, axis=0)
+        xy_complex = np.roll(xy_complex, col_shift, axis=1)
+        c = np.real(xy_complex)
+        d = np.real(xx) + np.real(zz) - 2 * c
+        k = np.exp(-1 / sigma**2 * np.maximum(0, d) / N)
+
+        return k
+
+    def get_subwindow(self, im, pos, sz):
+        """
+        Obtain sub-window from image, with replication-padding.
+        Returns sub-window of image IM centered at POS ([y, x] coordinates),
+        with size SZ ([height, width]). If any pixels are outside of the image,
+        they will replicate the values at the borders.
+
+        The subwindow is also normalized to range -0.5 .. 0.5, and the given
+        cosine window COS_WINDOW is applied
+        (though this part could be omitted to make the function more general).
+        """
+
+        if np.isscalar(sz):  # square sub-window
+            sz = [sz, sz]
+
+        ys = np.floor(pos[0]) + np.arange(sz[0], dtype=int) - np.floor(sz[0] / 2)
+        xs = np.floor(pos[1]) + np.arange(sz[1], dtype=int) - np.floor(sz[1] / 2)
+
+        ys = ys.astype(int)
+        xs = xs.astype(int)
+
+        # check for out-of-bounds coordinates,
+        # and set them to the values at the borders
+        ys[ys < 0] = 0
+        ys[ys >= im.shape[0]] = im.shape[0] - 1
+
+        xs[xs < 0] = 0
+        xs[xs >= im.shape[1]] = im.shape[1] - 1
+
+        # extract image
+        out = im[np.ix_(ys, xs)]
+        return out
+
+    def fft2(self, x):
+        """
+        FFT transform of the first 2 dimension
+        :param x: M*N*C the first two dimensions are used for Fast Fourier Transform
+        :return:  M*N*C the FFT2 of the first two dimension
+        """
+        if len(x.shape)==2:
+            return np.fft.fft2(x)
+        else:
+            xf = np.zeros(x.shape, dtype=complex)
+            for i in range(x.shape[-1]):
+                xf[:,:,i] = np.fft.fft2(x[:,:,i])
+
+            return xf
+        #return np.fft.fft(np.fft.fft(x, axis=0), axis=1)
+
+    def get_features(self, cos_window):
+        """
+
+        :param cos_window:
+        :return:
+        """
+        if self.feature_type == 'raw':
+            # using only grayscale:
+            if len(self.im_crop.shape) == 3:
+                img_gray = cv2.cvtColor(self.im_crop, cv2.COLOR_BGR2GRAY)
+                img_gray = img_gray * 1.0/255
+                img_gray = img_gray - img_gray.mean()
+                features = np.multiply(img_gray, cos_window)
+                return features
+
+        elif self.feature_type == 'hog':
+            # using only grayscale:
+            if len(self.im_crop.shape) == 3:
+                img_gray = cv2.cvtColor(self.im_crop, cv2.COLOR_BGR2GRAY)
+                features_hog, hog_image = hog(img_gray, orientations=self.bin_num, pixels_per_cell=(self.cell_size, self.cell_size), cells_per_block=(1, 1), visualise=True)
+                features = np.multiply(features_hog, cos_window[:, :, None])
+                return features
+        else:
+            assert 'Non implemented!'
 
 
 def load_video_info(video_path):
@@ -64,6 +259,7 @@ def load_video_info(video_path):
     The path to the video is returned, since it may change if the images
     are located in a sub-folder (as is the default for MILTrack's videos).
     """
+    import pylab
 
     # load ground truth from text file (MILTrack's format)
     text_files = glob.glob(os.path.join(video_path, "*_gt.txt"))
@@ -155,115 +351,7 @@ def load_video_info(video_path):
     return ret
 
 
-def rgb2gray(rgb_image):
-    "Based on http://stackoverflow.com/questions/12201577"
-    # [0.299, 0.587, 0.144] normalized gives [0.29, 0.57, 0.14]
-    return pylab.dot(rgb_image[:, :, :3], [0.29, 0.57, 0.14])
-
-
-def get_subwindow(im, pos, sz, cos_window):
-    """
-    Obtain sub-window from image, with replication-padding.
-    Returns sub-window of image IM centered at POS ([y, x] coordinates),
-    with size SZ ([height, width]). If any pixels are outside of the image,
-    they will replicate the values at the borders.
-
-    The subwindow is also normalized to range -0.5 .. 0.5, and the given
-    cosine window COS_WINDOW is applied
-    (though this part could be omitted to make the function more general).
-    """
-
-    if pylab.isscalar(sz):  # square sub-window
-        sz = [sz, sz]
-
-    ys = pylab.floor(pos[0]) \
-        + pylab.arange(sz[0], dtype=int) - pylab.floor(sz[0]/2)
-    xs = pylab.floor(pos[1]) \
-        + pylab.arange(sz[1], dtype=int) - pylab.floor(sz[1]/2)
-
-    ys = ys.astype(int)
-    xs = xs.astype(int)
-
-    # check for out-of-bounds coordinates,
-    # and set them to the values at the borders
-    ys[ys < 0] = 0
-    ys[ys >= im.shape[0]] = im.shape[0] - 1
-
-    xs[xs < 0] = 0
-    xs[xs >= im.shape[1]] = im.shape[1] - 1
-    #zs = range(im.shape[2])
-
-    # extract image
-    #out = im[pylab.ix_(ys, xs, zs)]
-    out = im[pylab.ix_(ys, xs)]
-
-    if debug:
-        print("Out max/min value==", out.max(), "/", out.min())
-        pylab.figure()
-        pylab.imshow(out, cmap=pylab.cm.gray)
-        pylab.title("cropped subwindow")
-
-    #pre-process window --
-    # normalize to range -0.5 .. 0.5
-    # pixels are already in range 0 to 1
-    out = out.astype(pylab.float64) - 0.5
-
-    # apply cosine window
-    out = pylab.multiply(cos_window, out)
-
-    return out
-
-
-def dense_gauss_kernel(sigma, x, y=None):
-    """
-    Gaussian Kernel with dense sampling.
-    Evaluates a gaussian kernel with bandwidth SIGMA for all displacements
-    between input images X and Y, which must both be MxN. They must also
-    be periodic (ie., pre-processed with a cosine window). The result is
-    an MxN map of responses.
-
-    If X and Y are the same, ommit the third parameter to re-use some
-    values, which is faster.
-    """
-
-    xf = pylab.fft2(x)  # x in Fourier domain
-    x_flat = x.flatten()
-    xx = pylab.dot(x_flat.transpose(), x_flat)  # squared norm of x
-
-    if y is not None:
-        # general case, x and y are different
-        yf = pylab.fft2(y)
-        y_flat = y.flatten()
-        yy = pylab.dot(y_flat.transpose(), y_flat)
-    else:
-        # auto-correlation of x, avoid repeating a few operations
-        yf = xf
-        yy = xx
-
-    # cross-correlation term in Fourier domain
-    xyf = pylab.multiply(xf, pylab.conj(yf))
-
-    # to spatial domain
-    xyf_ifft = pylab.ifft2(xyf)
-    #xy_complex = circshift(xyf_ifft, floor(x.shape/2))
-    row_shift, col_shift = pylab.floor(pylab.array(x.shape)/2).astype(int)
-    xy_complex = pylab.roll(xyf_ifft, row_shift, axis=0)
-    xy_complex = pylab.roll(xy_complex, col_shift, axis=1)
-    xy = pylab.real(xy_complex)
-
-    # calculate gaussian response for all positions
-    scaling = -1 / (sigma**2)
-    xx_yy = xx + yy
-    xx_yy_2xy = xx_yy - 2 * xy
-    k = pylab.exp(scaling * pylab.maximum(0, xx_yy_2xy / x.size))
-
-    #print("dense_gauss_kernel x.shape ==", x.shape)
-    #print("dense_gauss_kernel k.shape ==", k.shape)
-
-    return k
-
-
-def show_precision(positions, ground_truth, video_path, title):
+def show_precision(positions, ground_truth, title):
     """
     Calculates precision for a series of distance thresholds (percentage of
     frames where the distance to the ground truth is within the threshold).
@@ -272,6 +360,7 @@ def show_precision(positions, ground_truth, video_path, title):
     Accepts positions and ground truth as Nx2 matrices (for N frames), and
     a title string.
     """
+    import pylab
 
     print("Evaluating tracking results.")
 
@@ -397,136 +486,66 @@ def track(args):
     """
 
     info = load_video_info(args.video_path)
-    img_files, pos, target_sz, \
-        should_resize_image, ground_truth, video_path = info
+    img_files, pos, target_sz, should_resize_image, ground_truth, video_path = info
+    tracker = KCFTracker()
 
-    # window size, taking padding into account
-    sz = pylab.floor(target_sz * (1 + padding))
-
-    # desired output (gaussian shaped), bandwidth proportional to target size
-    output_sigma = pylab.sqrt(pylab.prod(target_sz)) * output_sigma_factor
-
-    grid_y = pylab.arange(sz[0]) - pylab.floor(sz[0]/2)
-    grid_x = pylab.arange(sz[1]) - pylab.floor(sz[1]/2)
-    #[rs, cs] = ndgrid(grid_x, grid_y)
-    rs, cs = pylab.meshgrid(grid_x, grid_y)
-    y = pylab.exp(-0.5 / output_sigma**2 * (rs**2 + cs**2))
-    yf = pylab.fft2(y)
-    #print("yf.shape ==", yf.shape)
-    #print("y.shape ==", y.shape)
-
-    # store pre-computed cosine window
-    cos_window = pylab.outer(pylab.hanning(sz[0]),
-                             pylab.hanning(sz[1]))
-
-    total_time = 0  # to calculate FPS
-    positions = pylab.zeros((len(img_files), 2))  # to calculate precision
-
-    global z, response
-    z = None
-    alphaf = None
-    response = None
-
+    positions = np.zeros((len(img_files), 2))  # to calculate precision
+    total_time = 0
+    start_time = time.time()
     for frame, image_filename in enumerate(img_files):
-
-        if True and ((frame % 10) == 0):
-            print("Processing frame", frame)
-
         # load image
         image_path = os.path.join(video_path, image_filename)
-        im = pylab.imread(image_path)
-        if len(im.shape) == 3 and im.shape[2] > 1:
-            im = rgb2gray(im)
+        img_rgb = cv2.imread(image_path)
+        # img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
 
-        #print("Image max/min value==", im.max(), "/", im.min())
-
-        if should_resize_image:
-            im = scipy.misc.imresize(im, 0.5)
-
-        start_time = time.time()
-
-        # extract and pre-process subwindow
-        x = get_subwindow(im, pos, sz, cos_window)
-
-        is_first_frame = (frame == 0)
-
-        if not is_first_frame:
-            # calculate response of the classifier at all locations
-            k = dense_gauss_kernel(sigma, x, z)
-            kf = pylab.fft2(k)
-            alphaf_kf = pylab.multiply(alphaf, kf)
-            response = pylab.real(pylab.ifft2(alphaf_kf))  # Eq. 9
-
-            # target location is at the maximum response
-            r = response
-            row, col = pylab.unravel_index(r.argmax(), r.shape)
-            pos = pos - pylab.floor(sz/2) + [row, col]
-
-            if debug:
-                print("Frame ==", frame)
-                print("Max response", r.max(), "at", [row, col])
-                pylab.figure()
-                pylab.imshow(cos_window)
-                pylab.title("cos_window")
-
-                pylab.figure()
-                pylab.imshow(x)
-                pylab.title("x")
-
-                pylab.figure()
-                pylab.imshow(response)
-                pylab.title("response")
-                pylab.show(block=True)
-
-        # end "if not first frame"
-
-        # get subwindow at current estimated target position,
-        # to train classifer
-        x = get_subwindow(im, pos, sz, cos_window)
-
-        # Kernel Regularized Least-Squares,
-        # calculate alphas (in Fourier domain)
-        k = dense_gauss_kernel(sigma, x)
-        new_alphaf = pylab.divide(yf, (pylab.fft2(k) + lambda_value))  # Eq. 7
-        new_z = x
-
-        if is_first_frame:
-            #first frame, train with a single image
-            alphaf = new_alphaf
-            z = x
+        if frame == 0:
+            tracker.train(img_rgb, pos, target_sz)
         else:
-            # subsequent frames, interpolate model
-            f = interpolation_factor
-            alphaf = (1 - f) * alphaf + f * new_alphaf
-            z = (1 - f) * z + f * new_z
-        # end "first frame or not"
+            pos = tracker.detect(img_rgb)
+            positions[frame, :] = pos
 
-        # save position and calculate FPS
-        positions[frame, :] = pos
-        total_time += time.time() - start_time
 
-        # visualization
-        plot_tracking(frame, pos, target_sz, im, ground_truth)
-    # end of "for each image in video"
 
-    if should_resize_image:
-        positions = positions * 2
+        print("Frame ==", frame)
+        print(' vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
+        print("pos", pos)
+        print("gt", ground_truth[frame])
+        print("\n")
 
+        args.debug = False
+        if args.debug:
+            # various plot
+            plt.figure(1)
+
+            plt.subplot(221)
+            plt.imshow(img_rgb)
+            plt.title('frame: %d' % frame)
+
+            plt.subplot(222)
+            plt.imshow(tracker.im_crop)
+            plt.title('previous target pos image')
+
+
+            plt.subplot(223)
+            plt.imshow(tracker.response)
+            plt.title('response')
+            if frame == 1:
+                plt.colorbar()
+
+            #plt.show(block=True)
+
+    total_time += time.time() - start_time
     print("Frames-per-second:",  len(img_files) / total_time)
 
-    title = os.path.basename(os.path.normpath(input_video_path))
-
+    title = os.path.basename(os.path.normpath(args.video_path))
     if len(ground_truth) > 0:
-        # show the precisions plot
-        show_precision(positions, ground_truth, video_path, title)
-
-    return
+        show_precision(positions, ground_truth, title)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--debug", help="debug mode, plotting some intermediate figures",
-                        action="store_true")
+                        default=True, action="store_true")
     parser.add_argument("-v", "--video_path", help="video path",
                         default=r"D:\Tracking\circulant_matrix_tracker\tiger2")
     args = parser.parse_args()
@@ -535,4 +554,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
