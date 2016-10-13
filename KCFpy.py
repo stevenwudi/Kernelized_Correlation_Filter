@@ -13,12 +13,12 @@ import time
 import argparse
 import cv2
 import numpy as np
-from hog import hog
+#from hog import hog
 import matplotlib.pyplot as plt
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw'):
+    def __init__(self, feature_type='raw', gt_type='rect'):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -45,6 +45,11 @@ class KCFTracker:
         self.target_sz = []
         self.vert_delta = 0
         self.horiz_delta = 0
+        # OBT dataset need extra definition
+        self.name = 'KCF' + feature_type
+        self.fps = -1
+        self.type = gt_type
+        self.res = []
 
         # following is set according to Table 2:
         if self.feature_type == 'raw':
@@ -57,16 +62,18 @@ class KCFTracker:
             self.cell_size = 4
             self.feature_bandwidth_sigma = 0.5
 
-    def train(self, im, pos, target_sz):
+    def train(self, im, init_rect, target_sz):
         """
         :param im: image should be of 3 dimension: M*N*C
         :param pos: the centre position of the target
         :param target_sz: target size
         """
-        self.pos = pos
-        self.target_sz = target_sz
+        self.pos = [init_rect[1]+init_rect[3]/2., init_rect[0]+init_rect[2]/2.]
+        self.res.append(init_rect)
+        # Duh OBT is the reverse
+        self.target_sz = target_sz[::-1]
         # desired padded input, proportional to input target size
-        self.patch_size = np.floor(target_sz * (1 + self.padding))
+        self.patch_size = np.floor(self.target_sz * (1 + self.padding))
         # desired output (gaussian shaped), bandwidth proportional to target size
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
@@ -79,6 +86,9 @@ class KCFTracker:
         self.cos_window = np.outer(np.hanning(self.yf.shape[0]), np.hanning(self.yf.shape[1]))
 
         # extract and pre-process subwindow
+        if im.shape[0] == 3:
+            im = im.transpose(1, 2, 0)/255.
+
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         self.x = self.get_features(cos_window=self.cos_window)
         self.xf = self.fft2(self.x)
@@ -95,6 +105,8 @@ class KCFTracker:
         """
 
         # extract and pre-process subwindow
+        if im.shape[0]==3:
+            im = im.transpose(1, 2, 0)/255.
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         z = self.get_features(cos_window=self.cos_window)
         zf = self.fft2(z)
@@ -108,7 +120,8 @@ class KCFTracker:
         v_centre, h_centre = np.unravel_index(self.response.argmax(), self.response.shape)
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
         self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
-
+        self.res.append([self.pos[1] - self.target_sz[1] / 2., self.pos[0] - self.target_sz[0] / 2,
+                         self.target_sz[1], self.target_sz[0]])
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train
         #########################################
@@ -216,8 +229,7 @@ class KCFTracker:
         if self.feature_type == 'raw':
             # using only grayscale:
             if len(self.im_crop.shape) == 3:
-                img_gray = cv2.cvtColor(self.im_crop, cv2.COLOR_BGR2GRAY)
-                img_gray = img_gray * 1.0/255
+                img_gray = np.mean(self.im_crop, axis=2)
                 img_gray = img_gray - img_gray.mean()
                 features = np.multiply(img_gray, cos_window)
                 return features
@@ -251,7 +263,7 @@ def load_video_info(video_path):
     assert text_files, \
         "No initial position and ground truth (*_gt.txt) to load."
 
-    first_file_path = os.path.join(video_path, text_files[0])
+    first_file_path = os.path.join(text_files[0])
     #f = open(first_file_path, "r")
     #ground_truth = textscan(f, '%f,%f,%f,%f') # [x, y, width, height]
     #ground_truth = cat(2, ground_truth{:})
@@ -290,7 +302,7 @@ def load_video_info(video_path):
 
     text_files = glob.glob(os.path.join(video_path, "*_frames.txt"))
     if text_files:
-        first_file_path = os.path.join(video_path, text_files[0])
+        first_file_path = os.path.join(text_files[0])
         #f = open(first_file_path, "r")
         #frames = textscan(f, '%f,%f')
         frames = pylab.loadtxt(first_file_path, delimiter=",", dtype=int)
@@ -365,13 +377,6 @@ def show_precision(positions, ground_truth, title):
         precisions[p] = pylab.sum(distances <= p, dtype=float) / len(distances)
     print("Representation score at 20 pixels: %f" % precisions[20])
 
-    if False:
-        pylab.figure()
-        pylab.plot(distances)
-        pylab.title("Distances")
-        pylab.xlabel("Frame number")
-        pylab.ylabel("Distance")
-
     # plot the precisions
     pylab.figure()  # 'Number', 'off', 'Name',
     pylab.title("Precisions - " + title)
@@ -417,6 +422,44 @@ def plot_tracking(frame, img_rgb, tracker):
     plt.waitforbuttonpress(1)
 
 
+def plot_tracking_rect(frame, img_rgb, tracker):
+    from matplotlib.patches import Rectangle
+    plt.figure(1)
+    plt.clf()
+
+    # Because of PIL read image
+    if img_rgb.shape[0] == 3:
+        img_rgb = img_rgb.transpose(1, 2, 0)/255.
+
+    tracking_figure_axes = plt.subplot(221)
+    tracking_rect = Rectangle(
+        xy=(tracker.res[-1][0], tracker.res[-1][1]),
+        width=tracker.target_sz[1],
+        height=tracker.target_sz[0],
+        facecolor='none',
+        edgecolor='r',
+        )
+    tracking_figure_axes.add_patch(tracking_rect)
+    plt.imshow(img_rgb)
+    plt.title('frame: %d' % frame)
+
+    plt.subplot(222)
+    plt.imshow(tracker.im_crop)
+    plt.title('previous target pos image')
+
+    plt.subplot(223)
+    plt.imshow(tracker.x)
+    plt.title('Feature used is %s' % tracker.feature_type)
+
+    plt.subplot(224)
+    plt.imshow(tracker.response)
+    plt.title('response')
+    plt.colorbar()
+
+    plt.draw()
+    plt.waitforbuttonpress(0.01)
+
+
 def track(args):
     """
     notation: variables ending with f are in the frequency domain.
@@ -445,7 +488,7 @@ def track(args):
         print("gt", ground_truth[frame])
         print("\n")
 
-        args.debug = True
+        args.debug = False
         if args.debug:
             plot_tracking(frame, img_rgb, tracker)
 
@@ -474,7 +517,7 @@ def main():
     parser.add_argument("-d", "--debug", help="debug mode, plotting some intermediate figures",
                         default=True, action="store_true")
     parser.add_argument("-v", "--video_path", help="video path",
-                        default=r"D:\Tracking\circulant_matrix_tracker\tiger2")
+                        default="./data/tiger2")
     args = parser.parse_args()
     track(args)
 
