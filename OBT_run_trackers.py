@@ -52,12 +52,13 @@ def main(argv):
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
-
-        trackerResults = run_trackers(
-            trackers, seqs, evalType, shiftTypeSet)
+        trackerResults = run_trackers(trackers, seqs, evalType, shiftTypeSet)
         for tracker in trackers:
             results = trackerResults[tracker]
             if len(results) > 0:
+                #########################################
+                ########### TODO
+                ###########################################
                 evalResults, attrList = butil.calc_result(tracker,
                                                           seqs, results, evalType)
                 print "Result of Sequences\t -- '{0}'".format(tracker)
@@ -78,8 +79,8 @@ def main(argv):
                     print "\toverlap : {0:02.1f}%".format(attr.overlap),
                     print "\tfailures : {0:.1f}".format(attr.error)
 
-                # if SAVE_RESULT:
-                #     butil.save_scores(attrList, testname)
+                if SAVE_RESULT:
+                    butil.save_scores(attrList)
 
 
 def run_trackers(trackers, seqs, evalType, shiftTypeSet):
@@ -99,7 +100,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
             t = trackers[idxTrk]
 
             if not OVERWRITE_RESULT:
-                trk_src = os.path.join(RESULT_SRC.format(evalType), t.feature_type)
+                trk_src = os.path.join(RESULT_SRC.format(evalType), t.name)
                 result_src = os.path.join(trk_src, s.name + '.json')
                 if os.path.exists(result_src):
                     seqResults = butil.load_seq_result(evalType, t, s.name)
@@ -147,10 +148,10 @@ def run_KCF_variant(tracker, seq, debug=False):
     from KCFpy import plot_tracking_rect, show_precision
 
     target_sz = np.asarray(seq.gtRect[seq.startFrame-1][2:])
-    total_time = 0
     start_time = time.time()
-
-    for frame, image_filename in enumerate(seq.s_frames):
+    tracker.res = []
+    for frame in range(seq.endFrame -seq.startFrame+1):
+        image_filename = seq.s_frames[frame]
         image_path = os.path.join(seq.path, image_filename)
         from keras.preprocessing import image
         img_rgb = image.load_img(image_path)
@@ -163,13 +164,13 @@ def run_KCF_variant(tracker, seq, debug=False):
         print("Frame ==", frame)
         print('vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
         print("pos", tracker.res[-1])
-        print("gt", seq.gtRect[frame-1])
+        print("gt", seq.gtRect[frame])
         print("\n")
 
         if debug:
             plot_tracking_rect(frame+seq.startFrame, img_rgb, tracker)
 
-    total_time += time.time() - start_time
+    total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time
     print("Frames-per-second:", tracker.fps)
 

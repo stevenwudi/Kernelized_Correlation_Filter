@@ -22,7 +22,7 @@ def save_seq_result(result):
 def save_scores(scoreList, testname=None):
     tracker = scoreList[0].tracker
     evalType = scoreList[0].evalType
-    trkSrc = RESULT_SRC.format(evalType) + tracker
+    trkSrc = RESULT_SRC.format(evalType) + tracker.name
     if testname == None:
         scoreSrc = trkSrc + '/scores'
     else:
@@ -78,8 +78,8 @@ def load_result(evalType, tracker):
 
 def load_seq_result(evalType, tracker, sequence):
     resultSRC = RESULT_SRC.format(evalType)
-    print 'Loading {0}/{1}...'.format(tracker, sequence)
-    src = os.path.join(resultSRC, tracker)
+    print 'Loading {0}/{1}...'.format(tracker.name, sequence)
+    src = os.path.join(resultSRC, tracker.name)
     result_src = os.path.join(src, sequence+'.json')
     resultFile = open(result_src)
     string = resultFile.read()
@@ -99,7 +99,8 @@ def load_all_scores(evalType, testname):
 def load_scores(evalType, tracker, testname):
     resultSRC = RESULT_SRC.format(evalType)
     print 'Loading \'{0}\'...'.format(tracker)
-    src = os.path.join(resultSRC, tracker+'/scores_{0}'.format(testname))
+    #src = os.path.join(resultSRC, tracker+'/scores_{0}'.format(testname))
+    src = os.path.join(resultSRC, tracker)
     attrNames = os.listdir(src)
     attrs = []
     for attrName in attrNames:

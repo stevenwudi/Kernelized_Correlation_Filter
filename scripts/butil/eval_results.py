@@ -33,15 +33,13 @@ def calc_result(tracker, seqs, results, evalType):
                     anno = seq.gtRect[result.startFrame-1:
                         result.endFrame]
 
-            print '{0} : eval {1}'.format(tracker, seq.name)
+            print '{0} : eval {1}'.format(tracker.name, seq.name)
             aveCoverage, aveErrCenter, errCoverage, errCenter = \
                 scripts.butil.calc_seq_err_robust(result, anno)
             seq.aveCoverage.append(aveCoverage)
             seq.aveErrCenter.append(aveErrCenter)
             seq.errCoverage += errCoverage
             seq.errCenter += errCenter
-
-            
             seqName = seq.name
             seqResultList[seqName].append(result)
         #end for j
