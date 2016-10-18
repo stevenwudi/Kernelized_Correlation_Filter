@@ -120,7 +120,9 @@ class KCFTracker:
         v_centre, h_centre = np.unravel_index(self.response.argmax(), self.response.shape)
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
         self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
-        self.res.append([self.pos[1] - self.target_sz[1] / 2., self.pos[0] - self.target_sz[0] / 2,
+        # we also require the bounding box to be within the image boundary
+        self.res.append([min(im.shape[0], max(0, self.pos[1] - self.target_sz[1] / 2.)),
+                         min(im.shape[1], max(0,self.pos[0] - self.target_sz[0] / 2.)),
                          self.target_sz[1], self.target_sz[0]])
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train
