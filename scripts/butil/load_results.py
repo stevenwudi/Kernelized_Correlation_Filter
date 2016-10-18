@@ -99,8 +99,7 @@ def load_all_scores(evalType, testname):
 def load_scores(evalType, tracker, testname):
     resultSRC = RESULT_SRC.format(evalType)
     print 'Loading \'{0}\'...'.format(tracker)
-    #src = os.path.join(resultSRC, tracker+'/scores_{0}'.format(testname))
-    src = os.path.join(resultSRC, tracker)
+    src = os.path.join(resultSRC, tracker+'/scores')
     attrNames = os.listdir(src)
     attrs = []
     for attrName in attrNames:

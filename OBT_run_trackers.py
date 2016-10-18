@@ -1,5 +1,4 @@
 """
-
 author: DI WU
 stevenwudi@gmail.com
 """
@@ -13,22 +12,21 @@ from scripts import *
 
 from KCFpy import KCFTracker
 
+
 def main(argv):
-    trackers = [KCFTracker()]
-    evalTypes = ['OPE', 'SRE', 'TRE']
+    trackers = [KCFTracker(feature_type='vgg')]
+    #evalTypes = ['OPE', 'SRE', 'TRE']
+    evalTypes = ['OPE']
     loadSeqs = 'TB100'
     try:
-        opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype="
-            , "sequence="])
+        opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
-        print 'usage : run_trackers.py -t <trackers> -s <sequences>' \
-              + '-e <evaltypes>'
+        print 'usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>'
         sys.exit(1)
 
     for opt, arg in opts:
         if opt == '-h':
-            print 'usage : run_trackers.py -t <trackers> -s <sequences>' \
-                  + '-e <evaltypes>'
+            print 'usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>'
             sys.exit(0)
         elif opt in ("-t", "--tracker"):
             trackers = [x.strip() for x in arg.split(',')]
@@ -41,7 +39,6 @@ def main(argv):
                 loadSeqs = [x.strip() for x in arg.split(',')]
         elif opt in ("-e", "--evaltype"):
             evalTypes = [x.strip() for x in arg.split(',')]
-            # evalTypes = [arg]
 
     if SETUP_SEQ:
         print 'Setup sequences ...'
@@ -52,15 +49,13 @@ def main(argv):
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
+
         trackerResults = run_trackers(trackers, seqs, evalType, shiftTypeSet)
+
         for tracker in trackers:
             results = trackerResults[tracker]
             if len(results) > 0:
-                #########################################
-                ########### TODO
-                ###########################################
-                evalResults, attrList = butil.calc_result(tracker,
-                                                          seqs, results, evalType)
+                evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
                 print "Result of Sequences\t -- '{0}'".format(tracker)
                 for seq in seqs:
                     try:
@@ -147,7 +142,7 @@ def run_KCF_variant(tracker, seq, debug=False):
     from keras.preprocessing import image
     from KCFpy import plot_tracking_rect, show_precision
 
-    target_sz = np.asarray(seq.gtRect[seq.startFrame-1][2:])
+    target_sz = np.asarray(seq.gtRect[0][2:])
     start_time = time.time()
     tracker.res = []
     for frame in range(seq.endFrame -seq.startFrame+1):
@@ -157,17 +152,16 @@ def run_KCF_variant(tracker, seq, debug=False):
         img_rgb = image.load_img(image_path)
         img_rgb = image.img_to_array(img_rgb)
         if frame == 0:
-            tracker.train(img_rgb, seq.gtRect[seq.startFrame-1], target_sz)
+            tracker.train(img_rgb, seq.gtRect[0], target_sz)
         else:
             tracker.detect(img_rgb)
 
-        print("Frame ==", frame)
-        print('vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
-        print("pos", tracker.res[-1])
-        print("gt", seq.gtRect[frame])
-        print("\n")
-
         if debug:
+            print("Frame ==", frame)
+            print('vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
+            print("pos", tracker.res[-1])
+            print("gt", seq.gtRect[frame])
+            print("\n")
             plot_tracking_rect(frame+seq.startFrame, img_rgb, tracker)
 
     total_time = time.time() - start_time
