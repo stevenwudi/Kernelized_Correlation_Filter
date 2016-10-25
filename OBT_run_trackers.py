@@ -18,6 +18,8 @@ def main(argv):
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
+    global RESULT_SRC
+    RESULT_SRC = RESULT_SRC + loadSeqs + '/{0}/'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
@@ -97,6 +99,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
             t = trackers[idxTrk]
 
             if not OVERWRITE_RESULT:
+
                 trk_src = os.path.join(RESULT_SRC.format(evalType), t.name)
                 result_src = os.path.join(trk_src, s.name + '.json')
                 if os.path.exists(result_src):
