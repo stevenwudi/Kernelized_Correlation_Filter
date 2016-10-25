@@ -51,12 +51,14 @@ def calc_result(tracker, seqs, results, evalType):
     attrList.append(allAttr)
     for attr in attrList:
         successRateList = []
+        precisionRateList = []
         attr.tracker = tracker
         attr.evalType = evalType
         attr.seqs = []
         attr.successRateList = []
         attr.overlapScores = []
         attr.errorNum = []
+        attr.precisionRateList = []
         for seq in seqs:
             if attr.name in seq.attributes or attr.name.lower() == 'all':
                 attr.seqs.append(seq.name)
@@ -67,6 +69,13 @@ def calc_result(tracker, seqs, results, evalType):
                         if score > threshold]
                     seqSuccessList.append(len(seqSuccess)/float(length))
                 successRateList.append(seqSuccessList)
+
+                length = len(seq.errCenter)
+                seqPrecisionRateList = []
+                for threshold in thresholdSetError:
+                    seqPrecisions = [score for score in seq.errCenter if score < threshold]
+                    seqPrecisionRateList.append(len(seqPrecisions)/float(length))
+                precisionRateList.append(seqPrecisionRateList)
 
                 overlapList = [score for score in seq.errCoverage 
                     if score > 0]
@@ -85,10 +94,16 @@ def calc_result(tracker, seqs, results, evalType):
         if len(attr.errorNum) > 0 :
             attr.error = sum(attr.errorNum) / len(attr.errorNum)
 
+        if len(precisionRateList) > 0:
+            for i in range(len(thresholdSetError)):
+                attr.precisionRateList.append(
+                    sum([rates[i] for rates in precisionRateList]) / float(len(precisionRateList)))
+
         if len(successRateList) > 0:
             for i in range(len(thresholdSetOverlap)):
                 attr.successRateList.append(
                     sum([rates[i] for rates in successRateList]) / float(len(successRateList)))
+
         attr.refresh_dict()
     # end for scores
 

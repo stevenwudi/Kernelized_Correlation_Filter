@@ -27,7 +27,7 @@ class KCFTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self.padding = 1.5  # extra area surrounding the target
+        self.padding = 2.2  # extra area surrounding the target
         self.lambda_value = 1e-4  # regularization
         self.spatial_bandwidth_sigma_factor = 1 / float(16)
         self.feature_type = feature_type

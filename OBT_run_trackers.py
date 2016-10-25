@@ -18,8 +18,6 @@ def main(argv):
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
-    global RESULT_SRC
-    RESULT_SRC = RESULT_SRC + loadSeqs + '/{0}/'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
@@ -60,7 +58,7 @@ def main(argv):
                 ######################################################################
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
                 ######################################################################
-                print "Result of Sequences\t -- '{0}'".format(tracker)
+                print "Result of Sequences\t -- '{0}'".format(tracker.name)
                 for seq in seqs:
                     try:
                         print '\t\'{0}\'{1}'.format(
@@ -72,7 +70,7 @@ def main(argv):
                     except:
                         print '\t\'{0}\'  ERROR!!'.format(seq.name)
 
-                print "Result of attributes\t -- '{0}'".format(tracker)
+                print "Result of attributes\t -- '{0}'".format(tracker.name)
                 for attr in attrList:
                     print "\t\'{0}\'".format(attr.name),
                     print "\toverlap : {0:02.1f}%".format(attr.overlap),
