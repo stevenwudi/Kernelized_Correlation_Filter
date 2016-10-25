@@ -30,11 +30,17 @@ def save_scores(scoreList, testname=None):
     if not os.path.exists(scoreSrc):
         os.makedirs(scoreSrc)
     for score in scoreList:
+        if score.tracker.name == 'KCFvgg':
+            # the following two attributes can not be copied, we need to delete them
+            if hasattr(score.tracker, 'extract_model'):
+                del score.tracker.extract_model
+            if hasattr(score.tracker, 'base_model'):
+                del score.tracker.base_model
         string = json.dumps(score, default=lambda o : o.__dict__)
         fileName = scoreSrc + '/{0}.json'.format(score.name)
         scoreFile = open(fileName, 'wb')
         scoreFile.write(string)
-        scoreFile.close()
+    scoreFile.close()
 
 def load_all_results(evalType):
     resultSRC = RESULT_SRC.format(evalType)

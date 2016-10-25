@@ -27,7 +27,7 @@ class KCFTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self.padding = 2.2  # extra area surrounding the target
+        self.padding = 1.5  # extra area surrounding the target
         self.lambda_value = 1e-4  # regularization
         self.spatial_bandwidth_sigma_factor = 1 / float(16)
         self.feature_type = feature_type
@@ -63,6 +63,15 @@ class KCFTracker:
             self.bin_num = 31
             self.cell_size = 4
             self.feature_bandwidth_sigma = 0.5
+        elif self.feature_type == 'dsst':
+            # this method adopts from the paper  Martin Danelljan, Gustav Hger, Fahad Shahbaz Khan and Michael Felsberg.
+            # "Accurate Scale Estimation for Robust Visual Tracking". (BMVC), 2014.
+            # The project website is: http: // www.cvl.isy.liu.se / research / objrec / visualtracking / index.html
+            self.adaptation_rate = 0.075  # linear interpolation factor for adaptation
+            self.feature_bandwidth_sigma = 0.2
+            self.cell_size = 1
+            self.scale_setp = 1.02
+
         elif self.feature_type == 'vgg':
             from keras.applications.vgg19 import VGG19
             from keras.models import Model
@@ -105,6 +114,11 @@ class KCFTracker:
         if self.feature_type == 'raw' and im.shape[0] == 3:
             im = im.transpose(1, 2, 0)/255.
             self.im_sz = im.shape
+        elif self.feature_type == 'dsst':
+            self.min_scale_factor = self.scale_step **(np.ceil(np.log(max(5. / self.patch_size)) / np.log(self.scale_step)))
+            #self.max_scale_factor = self.scale_step **(np.log(min(im.shape]. / base_target_sz)) / log(scale_step));
+
+
         elif self.feature_type == 'vgg':
             self.im_sz = im.shape[1:]
 
@@ -141,8 +155,8 @@ class KCFTracker:
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
         self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
         # we also require the bounding box to be within the image boundary
-        self.res.append([min(im.shape[0] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
-                         min(im.shape[1] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
+        self.res.append([min(im.shape[1] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
+                         min(im.shape[2] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
                          self.target_sz[1], self.target_sz[0]])
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train

@@ -14,10 +14,10 @@ from KCFpy import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='raw',debug=False)]
-    evalTypes = ['OPE', 'SRE', 'TRE']
+    trackers = [KCFTracker(feature_type='raw'), KCFTracker(feature_type='vgg')]
+    #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
-    loadSeqs = 'TB100'
+    loadSeqs = 'TB50'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
@@ -43,21 +43,21 @@ def main(argv):
     if SETUP_SEQ:
         print 'Setup sequences ...'
         butil.setup_seqs(loadSeqs)
-    #testname = raw_input("Input Test name : ")
+
     print 'Starting benchmark for {0} trackers, evalTypes : {1}'.format(
         len(trackers), evalTypes)
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
-
+        ######################################################################
         trackerResults = run_trackers(trackers, seqs, evalType, shiftTypeSet)
-
+        ######################################################################
         for tracker in trackers:
             results = trackerResults[tracker]
             if len(results) > 0:
-
+                ######################################################################
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
-
+                ######################################################################
                 print "Result of Sequences\t -- '{0}'".format(tracker)
                 for seq in seqs:
                     try:
@@ -88,11 +88,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     numSeq = len(seqs)
 
     trackerResults = dict((t, list()) for t in trackers)
-    #####################################################
-    # Following line can change the sequence to track
-    #####################################################
     for idxSeq in range(0, numSeq):
-    #for idxSeq in range(12,13):
         s = seqs[idxSeq]
 
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
@@ -151,7 +147,7 @@ def run_KCF_variant(tracker, seq, debug=False):
     target_sz = np.asarray(seq.gtRect[0][2:])
     start_time = time.time()
     tracker.res = []
-    for frame in range(seq.endFrame -seq.startFrame+1):
+    for frame in range(seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
         image_path = os.path.join(seq.path, image_filename)
         from keras.preprocessing import image
@@ -168,7 +164,7 @@ def run_KCF_variant(tracker, seq, debug=False):
             print("pos", tracker.res[-1])
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame+seq.startFrame, img_rgb, tracker, seq.gtRect)
+            plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time
