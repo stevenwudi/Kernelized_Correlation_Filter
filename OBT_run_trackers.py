@@ -14,8 +14,8 @@ from KCFpy import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='vgg')]
-    #evalTypes = ['OPE', 'SRE', 'TRE']
+    trackers = [KCFTracker(feature_type='raw',debug=False)]
+    evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB100'
     try:
@@ -55,7 +55,9 @@ def main(argv):
         for tracker in trackers:
             results = trackerResults[tracker]
             if len(results) > 0:
+
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
+
                 print "Result of Sequences\t -- '{0}'".format(tracker)
                 for seq in seqs:
                     try:
@@ -86,7 +88,11 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     numSeq = len(seqs)
 
     trackerResults = dict((t, list()) for t in trackers)
+    #####################################################
+    # Following line can change the sequence to track
+    #####################################################
     for idxSeq in range(0, numSeq):
+    #for idxSeq in range(12,13):
         s = seqs[idxSeq]
 
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
@@ -140,7 +146,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
 
 def run_KCF_variant(tracker, seq, debug=False):
     from keras.preprocessing import image
-    from KCFpy import plot_tracking_rect, show_precision
+    from visualisation_utils import plot_tracking_rect, show_precision
 
     target_sz = np.asarray(seq.gtRect[0][2:])
     start_time = time.time()
@@ -162,7 +168,7 @@ def run_KCF_variant(tracker, seq, debug=False):
             print("pos", tracker.res[-1])
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame+seq.startFrame, img_rgb, tracker)
+            plot_tracking_rect(frame+seq.startFrame, img_rgb, tracker, seq.gtRect)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time

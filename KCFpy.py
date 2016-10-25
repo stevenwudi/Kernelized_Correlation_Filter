@@ -13,12 +13,12 @@ import time
 import argparse
 import cv2
 import numpy as np
-#from hog import hog
+
 import matplotlib.pyplot as plt
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw', gt_type='rect'):
+    def __init__(self, feature_type='raw', debug=False, gt_type='rect'):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -27,7 +27,7 @@ class KCFTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self.padding = 1.  # extra area surrounding the target
+        self.padding = 2.2  # extra area surrounding the target
         self.lambda_value = 1e-4  # regularization
         self.spatial_bandwidth_sigma_factor = 1 / float(16)
         self.feature_type = feature_type
@@ -50,6 +50,8 @@ class KCFTracker:
         self.fps = -1
         self.type = gt_type
         self.res = []
+        self.im_sz = []
+        self.debug = debug # a flag indicating to plot the intermediate figures
 
         # following is set according to Table 2:
         if self.feature_type == 'raw':
@@ -61,6 +63,20 @@ class KCFTracker:
             self.bin_num = 31
             self.cell_size = 4
             self.feature_bandwidth_sigma = 0.5
+        elif self.feature_type == 'vgg':
+            from keras.applications.vgg19 import VGG19
+            from keras.models import Model
+
+            self.base_model = VGG19(include_top=False, weights='imagenet')
+            # self.block4_conv4_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block4_conv4').output)
+            # self.block1_conv1_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv1').output)
+            # self.block1_conv2_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv2').output)
+
+            self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block3_conv4').output)
+            self.cell_size = 4
+
+            self.feature_bandwidth_sigma = 1
+            self.adaptation_rate = 0.01
 
     def train(self, im, init_rect, target_sz):
         """
@@ -86,8 +102,11 @@ class KCFTracker:
         self.cos_window = np.outer(np.hanning(self.yf.shape[0]), np.hanning(self.yf.shape[1]))
 
         # extract and pre-process subwindow
-        if im.shape[0] == 3:
+        if self.feature_type == 'raw' and im.shape[0] == 3:
             im = im.transpose(1, 2, 0)/255.
+            self.im_sz = im.shape
+        elif self.feature_type == 'vgg':
+            self.im_sz = im.shape[1:]
 
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         self.x = self.get_features(cos_window=self.cos_window)
@@ -105,9 +124,10 @@ class KCFTracker:
         """
 
         # extract and pre-process subwindow
-        if im.shape[0]==3:
+        if self.feature_type == 'raw' and im.shape[0] == 3:
             im = im.transpose(1, 2, 0)/255.
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+
         z = self.get_features(cos_window=self.cos_window)
         zf = self.fft2(z)
         k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x, zf, z)
@@ -121,8 +141,8 @@ class KCFTracker:
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
         self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
         # we also require the bounding box to be within the image boundary
-        self.res.append([min(im.shape[0], max(0, self.pos[1] - self.target_sz[1] / 2.)),
-                         min(im.shape[1], max(0,self.pos[0] - self.target_sz[0] / 2.)),
+        self.res.append([min(im.shape[0] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
+                         min(im.shape[1] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
                          self.target_sz[1], self.target_sz[0]])
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train
@@ -170,6 +190,8 @@ class KCFTracker:
             xyf_ifft = np.fft.ifft2(xyf)
         elif self.feature_type == 'hog':
             xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
+        elif self.feature_type == 'vgg':
+            xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
 
         row_shift, col_shift = np.floor(np.array(xyf_ifft.shape) / 2).astype(int)
         xy_complex = np.roll(xyf_ifft, row_shift, axis=0)
@@ -203,14 +225,25 @@ class KCFTracker:
 
         # check for out-of-bounds coordinates,
         # and set them to the values at the borders
+        if self.feature_type == 'raw':
+            im_shape = im.shape
+        elif self.feature_type == 'vgg':
+            im_shape = im.shape[1:]
+
         ys[ys < 0] = 0
-        ys[ys >= im.shape[0]] = im.shape[0] - 1
+        ys[ys >= im_shape[0]] = im_shape[0] - 1
 
         xs[xs < 0] = 0
-        xs[xs >= im.shape[1]] = im.shape[1] - 1
+        xs[xs >= im_shape[1]] = im_shape[1] - 1
 
         # extract image
-        out = im[np.ix_(ys, xs)]
+
+        if self.feature_type == 'raw':
+            out = im[np.ix_(ys, xs)]
+        elif self.feature_type == 'vgg':
+            c = np.array(range(3))
+            out = im[np.ix_(c, ys, xs)]
+
         return out
 
     def fft2(self, x):
@@ -221,10 +254,8 @@ class KCFTracker:
         """
         return np.fft.fft2(x, axes=(0, 1))
 
-
     def get_features(self, cos_window):
         """
-
         :param cos_window:
         :return:
         """
@@ -243,230 +274,33 @@ class KCFTracker:
                 features_hog, hog_image = hog(img_gray, orientations=self.bin_num, pixels_per_cell=(self.cell_size, self.cell_size), cells_per_block=(1, 1), visualise=True)
                 features = np.multiply(features_hog, cos_window[:, :, None])
                 return features
+        elif self.feature_type == 'vgg':
+            from keras.applications.vgg19 import preprocess_input
+            x = np.expand_dims(self.im_crop.copy(), axis=0)
+            x = preprocess_input(x)
+            #block4_conv4_features = self.block4_conv4_model.predict(x)
+            # block1_conv1_features = self.block1_conv1_model.predict(x)
+            # block1_conv1_features = np.squeeze(block1_conv1_features)
+            # return block1_conv1_features.transpose(1, 2, 0) / block1_conv1_features.transpose(1, 2, 0).max()
+
+            features = self.extract_model.predict(x)
+            features = np.squeeze(features)
+            features = features.transpose(1, 2, 0) / features.transpose(1, 2, 0).max()
+            features = np.multiply(features, cos_window[:, :, None])
+
+            return features
+
+
+
         else:
             assert 'Non implemented!'
-
-
-def load_video_info(video_path):
-    """
-    Loads all the relevant information for the video in the given path:
-    the list of image files (cell array of strings), initial position
-    (1x2), target size (1x2), whether to resize the video to half
-    (boolean), and the ground truth information for precision calculations
-    (Nx2, for N frames). The ordering of coordinates is always [y, x].
-
-    The path to the video is returned, since it may change if the images
-    are located in a sub-folder (as is the default for MILTrack's videos).
-    """
-    import pylab
-
-    # load ground truth from text file (MILTrack's format)
-    text_files = glob.glob(os.path.join(video_path, "*_gt.txt"))
-    assert text_files, \
-        "No initial position and ground truth (*_gt.txt) to load."
-
-    first_file_path = os.path.join(text_files[0])
-    #f = open(first_file_path, "r")
-    #ground_truth = textscan(f, '%f,%f,%f,%f') # [x, y, width, height]
-    #ground_truth = cat(2, ground_truth{:})
-    ground_truth = pylab.loadtxt(first_file_path, delimiter=",")
-    #f.close()
-
-    # set initial position and size
-    first_ground_truth = ground_truth[0, :]
-    # target_sz contains height, width
-    target_sz = pylab.array([first_ground_truth[3], first_ground_truth[2]])
-    # pos contains y, x center
-    pos = [first_ground_truth[1], first_ground_truth[0]] \
-        + pylab.floor(target_sz / 2)
-
-    #try:
-    if True:
-        # interpolate missing annotations
-        # 4 out of each 5 frames is filled with zeros
-        for i in range(4):  # x, y, width, height
-            xp = range(0, ground_truth.shape[0], 5)
-            fp = ground_truth[xp, i]
-            x = range(ground_truth.shape[0])
-            ground_truth[:, i] = pylab.interp(x, xp, fp)
-        # store positions instead of boxes
-        ground_truth = ground_truth[:, [1, 0]] + ground_truth[:, [3, 2]] / 2
-    #except Exception as e:
-    else:
-        print("Failed to gather ground truth data")
-        #print("Error", e)
-        # ok, wrong format or we just don't have ground truth data.
-        ground_truth = []
-
-    # list all frames. first, try MILTrack's format, where the initial and
-    # final frame numbers are stored in a text file. if it doesn't work,
-    # try to load all png/jpg files in the folder.
-
-    text_files = glob.glob(os.path.join(video_path, "*_frames.txt"))
-    if text_files:
-        first_file_path = os.path.join(text_files[0])
-        #f = open(first_file_path, "r")
-        #frames = textscan(f, '%f,%f')
-        frames = pylab.loadtxt(first_file_path, delimiter=",", dtype=int)
-        #f.close()
-
-        # see if they are in the 'imgs' subfolder or not
-        test1_path_to_img = os.path.join(video_path,
-                                         "imgs/img%05i.png" % frames[0])
-        test2_path_to_img = os.path.join(video_path,
-                                         "img%05i.png" % frames[0])
-        if os.path.exists(test1_path_to_img):
-            video_path = os.path.join(video_path, "imgs/")
-        elif os.path.exists(test2_path_to_img):
-            video_path = video_path  # no need for change
-        else:
-            raise Exception("Failed to find the png images")
-
-        # list the files
-        img_files = ["img%05i.png" % i
-                     for i in range(frames[0], frames[1] + 1)]
-        #img_files = num2str((frames{1} : frames{2})', 'img%05i.png')
-        #img_files = cellstr(img_files);
-    else:
-        # no text file, just list all images
-        img_files = glob.glob(os.path.join(video_path, "*.png"))
-        if len(img_files) == 0:
-            img_files = glob.glob(os.path.join(video_path, "*.jpg"))
-
-        assert len(img_files), "Failed to find png or jpg images"
-
-        img_files.sort()
-
-    # if the target is too large, use a lower resolution
-    # no need for so much detail
-    if pylab.sqrt(pylab.prod(target_sz)) >= 100:
-        pos = pylab.floor(pos / 2)
-        target_sz = pylab.floor(target_sz / 2)
-        resize_image = True
-    else:
-        resize_image = False
-
-    ret = [img_files, pos, target_sz, resize_image, ground_truth, video_path]
-    return ret
-
-
-def show_precision(positions, ground_truth, title):
-    """
-    Calculates precision for a series of distance thresholds (percentage of
-    frames where the distance to the ground truth is within the threshold).
-    The results are shown in a new figure.
-
-    Accepts positions and ground truth as Nx2 matrices (for N frames), and
-    a title string.
-    """
-    import pylab
-    print("Evaluating tracking results.")
-    pylab.ioff()  # interactive mode off
-    max_threshold = 50  # used for graphs in the paper
-
-    if positions.shape[0] != ground_truth.shape[0]:
-        raise Exception(
-            "Could not plot precisions, because the number of ground"
-            "truth frames does not match the number of tracked frames.")
-
-    # calculate distances to ground truth over all frames
-    delta = positions - ground_truth
-    distances = pylab.sqrt((delta[:, 0]**2) + (delta[:, 1]**2))
-
-    # compute precisions
-    precisions = pylab.zeros((max_threshold, 1), dtype=float)
-    for p in range(max_threshold):
-        precisions[p] = pylab.sum(distances <= p, dtype=float) / len(distances)
-    print("Representation score at 20 pixels: %f" % precisions[20])
-
-    # plot the precisions
-    pylab.figure()  # 'Number', 'off', 'Name',
-    pylab.title("Precisions - " + title)
-    pylab.plot(precisions, "k-", linewidth=2)
-    pylab.xlabel("Threshold")
-    pylab.ylabel("Precision")
-
-    pylab.show()
-    return precisions
-
-
-def plot_tracking(frame, img_rgb, tracker):
-    from matplotlib.patches import Rectangle
-    plt.figure(1)
-    plt.clf()
-
-    tracking_figure_axes = plt.subplot(221)
-    tracking_rect = Rectangle(
-        xy=(tracker.pos[1]-tracker.target_sz[1]/2, tracker.pos[0]-tracker.target_sz[0]/2),
-        width=tracker.target_sz[1],
-        height=tracker.target_sz[0],
-        facecolor='none',
-        edgecolor='r',
-        )
-    tracking_figure_axes.add_patch(tracking_rect)
-    plt.imshow(img_rgb)
-    plt.title('frame: %d' % frame)
-
-    plt.subplot(222)
-    plt.imshow(tracker.im_crop)
-    plt.title('previous target pos image')
-
-    plt.subplot(223)
-    plt.imshow(tracker.x)
-    plt.title('Feature used is %s' % tracker.feature_type)
-
-    plt.subplot(224)
-    plt.imshow(tracker.response)
-    plt.title('response')
-    plt.colorbar()
-
-    plt.draw()
-    plt.waitforbuttonpress(1)
-
-
-def plot_tracking_rect(frame, img_rgb, tracker):
-    from matplotlib.patches import Rectangle
-    plt.figure(1)
-    plt.clf()
-
-    # Because of PIL read image
-    if img_rgb.shape[0] == 3:
-        img_rgb = img_rgb.transpose(1, 2, 0)/255.
-
-    tracking_figure_axes = plt.subplot(221)
-    tracking_rect = Rectangle(
-        xy=(tracker.res[-1][0], tracker.res[-1][1]),
-        width=tracker.target_sz[1],
-        height=tracker.target_sz[0],
-        facecolor='none',
-        edgecolor='r',
-        )
-    tracking_figure_axes.add_patch(tracking_rect)
-    plt.imshow(img_rgb)
-    plt.title('frame: %d' % frame)
-
-    plt.subplot(222)
-    plt.imshow(tracker.im_crop)
-    plt.title('previous target pos image')
-
-    plt.subplot(223)
-    plt.imshow(tracker.x)
-    plt.title('Feature used is %s' % tracker.feature_type)
-
-    plt.subplot(224)
-    plt.imshow(tracker.response)
-    plt.title('response')
-    plt.colorbar()
-
-    plt.draw()
-    plt.waitforbuttonpress(0.01)
 
 
 def track(args):
     """
     notation: variables ending with f are in the frequency domain.
     """
-
+    from visualisation_utils import load_video_info, plot_tracking, show_precision
     info = load_video_info(args.video_path)
     img_files, pos, target_sz, should_resize_image, ground_truth, video_path = info
     tracker = KCFTracker()
