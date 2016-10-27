@@ -14,7 +14,7 @@ from KCFpy import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='raw'), KCFTracker(feature_type='vgg')]
+    trackers = [KCFTracker(feature_type='dsst')]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
@@ -88,9 +88,11 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     numSeq = len(seqs)
 
     trackerResults = dict((t, list()) for t in trackers)
+    ##################################################
+    # chose sequence to run from below
+    ##################################################
     for idxSeq in range(0, numSeq):
         s = seqs[idxSeq]
-
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 
         for idxTrk in range(len(trackers)):
