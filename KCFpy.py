@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw'):
+    def __init__(self, feature_type='hog'):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -53,7 +53,7 @@ class KCFTracker:
             self.cell_size = 1
         elif self.feature_type == 'hog':
             self.adaptation_rate = 0.02  # linear interpolation factor for adaptation
-            self.bin_num = 31
+            self.bin_num = 9
             self.cell_size = 4
             self.feature_bandwidth_sigma = 0.5
 
@@ -107,7 +107,8 @@ class KCFTracker:
         # (this is discussed in the paper Fig. 6). The response map wrap around cyclically.
         v_centre, h_centre = np.unravel_index(self.response.argmax(), self.response.shape)
         self.vert_delta, self.horiz_delta = [v_centre - self.response.shape[0]/2, h_centre - self.response.shape[1]/2]
-        self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta])
+        self.pos = self.pos + np.dot(self.cell_size, [self.vert_delta, self.horiz_delta]) + \
+                   [np.floor(self.cell_size/2), np.floor(self.cell_size/2)]
 
         #########################################
         # we need to train the tracker again here, it's almost the replicate of train
@@ -206,10 +207,8 @@ class KCFTracker:
         """
         return np.fft.fft2(x, axes=(0, 1))
 
-
     def get_features(self, cos_window):
         """
-
         :param cos_window:
         :return:
         """
@@ -404,9 +403,10 @@ def plot_tracking(frame, img_rgb, tracker):
     plt.imshow(tracker.im_crop)
     plt.title('previous target pos image')
 
-    plt.subplot(223)
-    plt.imshow(tracker.x)
-    plt.title('Feature used is %s' % tracker.feature_type)
+    if tracker.feature_type == 'raw':
+        plt.subplot(223)
+        plt.imshow(tracker.x)
+        plt.title('Feature used is %s' % tracker.feature_type)
 
     plt.subplot(224)
     plt.imshow(tracker.response)
@@ -414,7 +414,7 @@ def plot_tracking(frame, img_rgb, tracker):
     plt.colorbar()
 
     plt.draw()
-    plt.waitforbuttonpress(1)
+    plt.waitforbuttonpress(0.1)
 
 
 def track(args):
@@ -424,7 +424,7 @@ def track(args):
 
     info = load_video_info(args.video_path)
     img_files, pos, target_sz, should_resize_image, ground_truth, video_path = info
-    tracker = KCFTracker()
+    tracker = KCFTracker(feature_type='raw')
 
     positions = np.zeros((len(img_files), 2))  # to calculate precision
     total_time = 0
@@ -445,7 +445,7 @@ def track(args):
         print("gt", ground_truth[frame])
         print("\n")
 
-        args.debug = True
+        args.debug = False
         if args.debug:
             plot_tracking(frame, img_rgb, tracker)
 
