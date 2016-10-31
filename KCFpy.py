@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imresize
 
+
 class KCFTracker:
     def __init__(self, feature_type='raw', debug=False, gt_type='rect'):
         """
@@ -18,7 +19,7 @@ class KCFTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self.padding = 1.5  # extra area surrounding the target
+        self.padding = 2.2  # extra area surrounding the target
         self.lambda_value = 1e-4  # regularization
         self.spatial_bandwidth_sigma_factor = 1 / float(16)
         self.feature_type = feature_type
@@ -45,7 +46,6 @@ class KCFTracker:
         self.debug = debug # a flag indicating to plot the intermediate figures
         self.first_patch_sz = []
         self.first_target_sz = []
-        self.cos_window_target = []
         self.currentScaleFactor = 1
 
         # following is set according to Table 2:
@@ -62,7 +62,7 @@ class KCFTracker:
             # this method adopts from the paper  Martin Danelljan, Gustav Hger, Fahad Shahbaz Khan and Michael Felsberg.
             # "Accurate Scale Estimation for Robust Visual Tracking". (BMVC), 2014.
             # The project website is: http: // www.cvl.isy.liu.se / research / objrec / visualtracking / index.html
-            self.adaptation_rate = 0.075  # linear interpolation factor for adaptation
+            self.adaptation_rate = 0.025  # linear interpolation factor for adaptation
             self.feature_bandwidth_sigma = 0.2
             self.cell_size = 1
             self.scale_step = 1.02
@@ -82,19 +82,22 @@ class KCFTracker:
             self.new_sf_den = []
             self.scale_response = []
             self.lambda_scale = 1e-2
-
-        elif self.feature_type == 'vgg':
-            from keras.applications.vgg19 import VGG19
-            from keras.models import Model
-
-            self.base_model = VGG19(include_top=False, weights='imagenet')
-            # self.block4_conv4_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block4_conv4').output)
-            # self.block1_conv1_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv1').output)
-            # self.block1_conv2_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv2').output)
-
-            self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block3_conv4').output)
-            self.cell_size = 4
-
+        elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
+            if self.feature_type == 'vgg':
+                from keras.applications.vgg19 import VGG19
+                from keras.models import Model
+                self.base_model = VGG19(include_top=False, weights='imagenet')
+                # self.block4_conv4_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block4_conv4').output)
+                # self.block1_conv1_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv1').output)
+                # self.block1_conv2_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block1_conv2').output)
+                self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block2_conv2').output)
+            elif self.feature_type == 'resnet50':
+                from keras.applications.resnet50 import ResNet50
+                from keras.models import Model
+                self.base_model = ResNet50(weights='imagenet', include_top=False)
+                self.extract_model = Model(input=self.base_model.input,
+                                           output=self.base_model.get_layer('activation_10').output)
+            self.cell_size = 2
             self.feature_bandwidth_sigma = 1
             self.adaptation_rate = 0.01
 
@@ -116,13 +119,21 @@ class KCFTracker:
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
         grid_x = np.arange(np.floor(self.patch_size[1]/self.cell_size)) - np.floor(self.patch_size[1]/(2*self.cell_size))
+        if self.feature_type == 'resnet50':
+            # this is an odd tweak to make the dimension uniform:
+            if np.mod(self.patch_size[0], 2) == 0:
+                grid_y = np.arange(np.floor(self.patch_size[0] / self.cell_size)-1) - np.floor(
+                    self.patch_size[0] / (2 * self.cell_size)) - 0.5
+            if np.mod(self.patch_size[1], 2) == 0:
+                grid_x = np.arange(np.floor(self.patch_size[1] / self.cell_size)-1) - np.floor(
+                    self.patch_size[1] / (2 * self.cell_size)) - 0.5
+
         rs, cs = np.meshgrid(grid_x, grid_y)
         y = np.exp(-0.5 / self.output_sigma ** 2 * (rs ** 2 + cs ** 2))
         self.yf = self.fft2(y)
 
         # store pre-computed cosine window
         self.cos_window = np.outer(np.hanning(self.yf.shape[0]), np.hanning(self.yf.shape[1]))
-        self.cos_window_target = np.outer(np.hanning(self.target_sz[0]), np.hanning(self.target_sz[1]))
 
         # extract and pre-process subwindow
         if self.feature_type == 'raw' and im.shape[0] == 3:
@@ -140,7 +151,7 @@ class KCFTracker:
             self.new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
             self.new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
 
-        elif self.feature_type == 'vgg':
+        elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
             self.im_sz = im.shape[1:]
 
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
@@ -238,7 +249,7 @@ class KCFTracker:
         """
         import cv2
         from hog import hog
-        resized_im_array = np.zeros((len(self.scaleFactors), np.floor(self.first_target_sz[0]/4) * np.floor(self.first_target_sz[1]/4) * 31))
+        resized_im_array = np.zeros((len(self.scaleFactors), int(np.floor(self.first_target_sz[0]/4) * np.floor(self.first_target_sz[1]/4) * 31)))
         for i, s in enumerate(scaleFactors):
             patch_sz = np.floor(self.first_target_sz * s)
             im_patch = self.get_subwindow(im, self.pos, patch_sz)  # extract image
@@ -284,7 +295,7 @@ class KCFTracker:
             #     xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=3))
         elif self.feature_type == 'hog':
             xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
-        elif self.feature_type == 'vgg':
+        elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
             xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
 
         row_shift, col_shift = np.floor(np.array(xyf_ifft.shape) / 2).astype(int)
@@ -328,16 +339,16 @@ class KCFTracker:
 
         if self.feature_type == 'raw' or self.feature_type == 'dsst':
             out = im[np.ix_(ys, xs)]
-        elif self.feature_type == 'vgg':
+            # introduce scaling, here, we need them to be the same size
+            if np.all(self.first_patch_sz == out.shape[:2]):
+                return out
+            else:
+                out = imresize(out, self.first_patch_sz)
+                return out / 255.
+        elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
             c = np.array(range(3))
             out = im[np.ix_(c, ys, xs)]
-
-        # introduce scaling, here, we need them to be the same size
-        if np.all(self.first_patch_sz == out.shape[:2]):
             return out
-        else:
-            out = imresize(out, self.first_patch_sz)
-            return out /255.
 
     def fft2(self, x):
         """
@@ -368,13 +379,16 @@ class KCFTracker:
             features = np.multiply(img_colour, self.cos_window[:, :, None])
             return features
 
-        elif self.feature_type == 'vgg':
-            from keras.applications.vgg19 import preprocess_input
+        elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
+            if self.feature_type == 'vgg':
+                from keras.applications.vgg19 import preprocess_input
+            elif self.feature_type == 'resnet50':
+                from keras.applications.resnet50 import preprocess_input
             x = np.expand_dims(self.im_crop.copy(), axis=0)
             x = preprocess_input(x)
             features = self.extract_model.predict(x)
             features = np.squeeze(features)
-            features = features.transpose(1, 2, 0) / features.transpose(1, 2, 0).max()
+            features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
             features = np.multiply(features, self.cos_window[:, :, None])
             return features
 
