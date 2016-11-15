@@ -30,17 +30,34 @@ def save_scores(scoreList, testname=None):
     if not os.path.exists(scoreSrc):
         os.makedirs(scoreSrc)
     for score in scoreList:
-        if score.tracker.name == 'KCFvgg':
+        if score.tracker.name[:3] == 'KCF':
+            score.tracker = score.tracker.name
             # the following two attributes can not be copied, we need to delete them
-            if hasattr(score.tracker, 'extract_model'):
-                del score.tracker.extract_model
-            if hasattr(score.tracker, 'base_model'):
-                del score.tracker.base_model
+            # if hasattr(score.tracker, 'extract_model'):
+            #     del score.tracker.extract_model
+            # if hasattr(score.tracker, 'base_model'):
+            #     del score.tracker.base_model
         string = json.dumps(score, default=lambda o : o.__dict__)
         fileName = scoreSrc + '/{0}.json'.format(score.name)
         scoreFile = open(fileName, 'wb')
         scoreFile.write(string)
     scoreFile.close()
+
+
+def save_scores_new_tracker(scoreList, tracker_name='HDT_cvpr2016'):
+
+    evalType = scoreList[0].evalType
+    trkSrc = RESULT_SRC.format(evalType) + tracker_name
+    scoreSrc = trkSrc + '/scores'
+    if not os.path.exists(scoreSrc):
+        os.makedirs(scoreSrc)
+    for score in scoreList:
+        string = json.dumps(score, default=lambda o : o.__dict__)
+        fileName = scoreSrc + '/{0}.json'.format(score.name)
+        scoreFile = open(fileName, 'wb')
+        scoreFile.write(string)
+    scoreFile.close()
+
 
 def load_all_results(evalType):
     resultSRC = RESULT_SRC.format(evalType)
@@ -105,7 +122,7 @@ def load_all_scores(evalType, testname):
 def load_scores(evalType, tracker, testname):
     resultSRC = RESULT_SRC.format(evalType)
     print 'Loading \'{0}\'...'.format(tracker)
-    if tracker == 'KCFvgg' or tracker == 'KCFraw' or tracker == 'KCFdsst':
+    if tracker[:3] == 'KCF':
         src = os.path.join(resultSRC, tracker + '/scores')
     else:
         src = os.path.join(resultSRC, tracker + '/scores_{0}'.format(testname))
