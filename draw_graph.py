@@ -33,7 +33,7 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
                 ls = '-'
                 if i % 2 == 1:
                     ls = '--'
-                ave = sum(attr.successRateList) / float(len(attr.successRateList))
+                ave = sum(attr.successRateList) /100. / float(len(attr.successRateList))
                 if type(tracker) == dict:
                     # Wudi's modification:
                     plt.plot(thresholdSetOverlap, attr.successRateList,
@@ -76,11 +76,16 @@ def plot_graph_precision(scoreList, fignum, evalType, testname):
                 ls = '-'
                 if i % 2 == 1:
                     ls = '--'
-                ave = sum(attr.precisionRateList) / float(len(attr.precisionRateList))
+                #ave = sum(attr.precisionRateList) / float(len(attr.precisionRateList))
+                ave = attr.precisionRateList[20]
                 if type(tracker) == dict:
                     # Wudi's modification:
-                    plt.plot(thresholdSetError, attr.precisionRateList,
-                        c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
+                    if tracker['name']=='DSST':
+                        plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
+                                 label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_dlib', ave), lw=2.0, ls=ls)
+                    else:
+                        plt.plot(thresholdSetError, attr.precisionRateList,c = LINE_COLORS[i],
+                                 label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
                 elif tracker == "HDT_cvpr2016" or tracker =='KCFvgg_rnn' or tracker =='KCFmulti_cnn':
                     plt.plot(thresholdSetError, attr.precisionRateList,
                         c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker, ave), lw=2.0, ls=ls)

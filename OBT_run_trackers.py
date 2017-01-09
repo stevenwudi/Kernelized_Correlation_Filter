@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 """
 author: DI WU
 stevenwudi@gmail.com
@@ -14,19 +16,19 @@ from KCFpy import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='dsst')]
+    trackers = [KCFTracker(feature_type='vgg', sub_feature_type='grabcut', load_model=True)]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
-        print 'usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>'
+        print('usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>')
         sys.exit(1)
 
     for opt, arg in opts:
         if opt == '-h':
-            print 'usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>'
+            print('usage : run_trackers.py -t <trackers> -s <sequences>' + '-e <evaltypes>')
             sys.exit(0)
         elif opt in ("-t", "--tracker"):
             trackers = [x.strip() for x in arg.split(',')]
@@ -41,11 +43,11 @@ def main(argv):
             evalTypes = [x.strip() for x in arg.split(',')]
 
     if SETUP_SEQ:
-        print 'Setup sequences ...'
+        print('Setup sequences ...')
         butil.setup_seqs(loadSeqs)
 
-    print 'Starting benchmark for {0} trackers, evalTypes : {1}'.format(
-        len(trackers), evalTypes)
+    print('Starting benchmark for {0} trackers, evalTypes : {1}'.format(
+        len(trackers), evalTypes))
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
@@ -58,23 +60,18 @@ def main(argv):
                 ######################################################################
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
                 ######################################################################
-                print "Result of Sequences\t -- '{0}'".format(tracker.name)
+                print ("Result of Sequences\t -- '{0}'".format(tracker.name))
                 for seq in seqs:
                     try:
-                        print '\t\'{0}\'{1}'.format(
-                            seq.name, " " * (12 - len(seq.name))),
-                        print "\taveCoverage : {0:.3f}%".format(
-                            sum(seq.aveCoverage) / len(seq.aveCoverage) * 100),
-                        print "\taveErrCenter : {0:.3f}".format(
-                            sum(seq.aveErrCenter) / len(seq.aveErrCenter))
+                        print('\t{0} {1} \taveCoverage : {2:0.2f}, \taveErrCenter : {3:0.2f}'.format(seq.name,
+                              " " * (12 - len(seq.name)), sum(seq.aveCoverage) / len(seq.aveCoverage) * 100,
+                              sum(seq.aveErrCenter) / len(seq.aveErrCenter)))
                     except:
-                        print '\t\'{0}\'  ERROR!!'.format(seq.name)
+                        print('\t\'{0}\'  ERROR!!'.format(seq.name))
 
-                print "Result of attributes\t -- '{0}'".format(tracker.name)
+                print("Result of attributes\t -- '{0}'".format(tracker.name))
                 for attr in attrList:
-                    print "\t\'{0}\'".format(attr.name),
-                    print "\toverlap : {0:02.1f}%".format(attr.overlap),
-                    print "\tfailures : {0:.1f}".format(attr.error)
+                    print("\t {0}, \t overlap : {1:.1f}, \t failures : {2:.1f}".format(attr.name, attr.overlap, attr.error))
 
                 if SAVE_RESULT:
                     butil.save_scores(attrList)
@@ -109,9 +106,8 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
             seqResults = []
             seqLen = len(subSeqs)
             for idx in range(seqLen):
-                print '{0}_{1}, {2}_{3}:{4}/{5} - {6}'.format(
-                    idxTrk + 1, t.feature_type, idxSeq + 1, s.name, idx + 1, seqLen, \
-                    evalType)
+                print('{0}_{1}, {2}_{3}:{4}/{5} - {6}'.format(
+                    idxTrk + 1, t.feature_type, idxSeq + 1, s.name, idx + 1, seqLen, evalType))
                 rp = tmpRes_path + '_' + t.feature_type + '_' + str(idx + 1) + '/'
                 if SAVE_IMAGE and not os.path.exists(rp):
                     os.makedirs(rp)
@@ -147,24 +143,22 @@ def run_KCF_variant(tracker, seq, debug=False):
     from keras.preprocessing import image
     from visualisation_utils import plot_tracking_rect, show_precision
 
-    target_sz = np.asarray(seq.gtRect[0][2:])
     start_time = time.time()
     tracker.res = []
     for frame in range(seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
         image_path = os.path.join(seq.path, image_filename)
-        from keras.preprocessing import image
         img_rgb = image.load_img(image_path)
         img_rgb = image.img_to_array(img_rgb)
         if frame == 0:
-            tracker.train(img_rgb, seq.gtRect[0], target_sz)
+            tracker.train(img_rgb, seq.gtRect[0])
         else:
-            tracker.detect(img_rgb)
+            tracker.detect(img_rgb, frame)
 
-        if debug:
+        if debug and frame > 0:
             print("Frame ==", frame)
-            print('vert_delta: %.2f, horiz_delta: %.2f' % (tracker.vert_delta, tracker.horiz_delta))
-            print("pos", tracker.res[-1])
+            print('horiz_delta: %.2f, vert_delta: %.2f' % (tracker.horiz_delta, tracker.vert_delta))
+            print("pos", np.array(tracker.res[-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
             plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)

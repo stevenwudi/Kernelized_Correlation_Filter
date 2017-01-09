@@ -270,42 +270,6 @@ class KCFTracker:
 
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
 
-        ########################################################
-        # let's try grabcut now!
-        ########################################################
-        if False:
-            import cv2
-            sz = (self.patch_size*0.7).astype('uint8')
-            self.im_crop = self.get_subwindow(im, self.pos, sz)
-            img = self.im_crop.transpose(1,2,0).astype('uint8')
-            plt.imshow(img)
-
-            coeff = 1.5
-            rect = tuple(np.array([sz[::-1] / 2 - self.target_sz[::-1] / 2 * coeff, self.target_sz[::-1] * coeff]).astype(np.uint8).flatten())
-
-            mask = np.zeros(img.shape[:2], dtype = 'uint8')
-            bgdModel = np.zeros((1,65))
-            fgdModel = np.zeros((1,65))
-
-            cv2.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
-
-            mask2 = np.where((mask==2) | (mask==0), 0, 1).astype('uint8')
-            img_mask = img * mask2[:,:, np.newaxis]
-            plt.imshow(img_mask)
-            plt.show()
-
-            tmp1 = np.zeros((1, 13 * 5))
-            tmp2 = np.zeros((1, 13 * 5))
-            h,w = img.shape[:2]
-            mask = np.zeros((h,w),dtype='uint8')
-            cv2.grabCut(img, mask,rect,tmp1,tmp2,10,mode=cv2.GC_INIT_WITH_RECT)
-
-            mask2 = np.where((mask==2) | (mask==0), 0, 1).astype('uint8')
-            img_mask = img * mask2[:,:, np.newaxis]
-            plt.imshow(mask2)
-            plt.show()
-        ########################################################
-
         self.x = self.get_features()
         self.xf = self.fft2(self.x)
         if self.feature_type == 'cnn' or self.feature_type == 'vgg':
@@ -324,6 +288,11 @@ class KCFTracker:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
             self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
             self.response = np.real(np.fft.ifft2(np.multiply(self.alphaf, self.fft2(k))))
+
+        # the first frame also need to be included!
+        self.res.append([min(self.im_sz[1] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
+                         min(self.im_sz[0] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
+                         self.target_sz[1], self.target_sz[0]])
 
     def detect(self, im, frame):
         """
@@ -792,3 +761,66 @@ class KCFTracker:
         # ('feature time:', 0.07054710388183594)
         # ('fft2:', 0.22904396057128906)
         # ('guassian kernel + fft2: ', 0.20537400245666504)
+
+    def grabcut(self, im, init_rect):
+        """
+         :param im: image should be of 3 dimension: M*N*C
+         :param pos: the centre position of the target
+         :param target_sz: target size
+         """
+        self.pos = [init_rect[1] + init_rect[3] / 2., init_rect[0] + init_rect[2] / 2.]
+        self.res.append(init_rect)
+        # Duh OBT is the reverse
+        self.target_sz = np.asarray(init_rect[2:])
+        self.target_sz = self.target_sz[::-1]
+        self.patch_size = np.floor(self.target_sz * (1 + self.padding))
+        self.im_sz = im.shape[1:]
+        ########################################################
+        # let's try grabcut now!
+        ########################################################
+        self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+        import cv2
+        from matplotlib.patches import Rectangle
+        # sz = self.target_sz.astype('uint8')
+        chosen_size = 2
+        sz = (self.patch_size * (chosen_size / 3.2))
+        im_crop = self.get_subwindow(im, self.pos, sz)
+        img = im_crop.transpose(1, 2, 0).astype('uint8')
+
+        coeff = 1.8
+        rect = tuple(np.array([sz[::-1] / 2 - self.target_sz[::-1] / 2 * coeff, self.target_sz[::-1] * coeff]).astype(np.uint8).flatten())
+
+        mask = np.zeros(img.shape[:2], dtype='uint8')
+        bgdModel = np.zeros((1, 65))
+        fgdModel = np.zeros((1, 65))
+
+        cv2.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+
+        mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
+        img_mask = img * mask2[:, :, np.newaxis]
+
+        plt.figure(1)
+        plt.clf()
+
+        plt.subplot(221)
+        plt.imshow(self.im_crop.transpose(1, 2, 0).astype('uint8'))
+        plt.title('original image patch')
+
+        tracking_figure_axes = plt.subplot(222)
+        tracking_rect = Rectangle(
+            xy=(rect[0], rect[1]),
+            width=rect[2],
+            height=rect[3],
+            facecolor='none',
+            edgecolor='r',
+        )
+        tracking_figure_axes.add_patch(tracking_rect)
+        plt.imshow(img)
+        plt.title('original image')
+
+        plt.subplot(223)
+        plt.imshow(img_mask)
+        plt.title('grabcut image')
+
+        plt.draw()
+        plt.waitforbuttonpress(0.5)
