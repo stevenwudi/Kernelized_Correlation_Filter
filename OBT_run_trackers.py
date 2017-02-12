@@ -146,9 +146,8 @@ def run_KCF_variant(tracker, seq, debug=False):
     from visualisation_utils import plot_tracking_rect, show_precision
 
     start_time = time.time()
-
     start_frame = 0
-    tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst', load_model=True, vgglayer='')
+    print('currentScaleFactor: %.2f'%tracker.currentScaleFactor)
     tracker.res = []
     for frame in range(start_frame, seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
