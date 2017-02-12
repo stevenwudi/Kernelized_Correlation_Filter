@@ -147,7 +147,6 @@ def run_KCF_variant(tracker, seq, debug=False):
 
     start_time = time.time()
     start_frame = 0
-    print('currentScaleFactor: %.2f'%tracker.currentScaleFactor)
     tracker.res = []
     for frame in range(start_frame, seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
@@ -156,6 +155,7 @@ def run_KCF_variant(tracker, seq, debug=False):
         img_rgb = image.img_to_array(img_rgb)
         if frame == start_frame:
             tracker.train(img_rgb, seq.gtRect[start_frame], seq.name)
+            print('currentScaleFactor: %.2f' % tracker.currentScaleFactor)
         else:
             tracker.detect(img_rgb, frame)
 

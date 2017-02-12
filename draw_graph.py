@@ -86,7 +86,7 @@ def plot_graph_precision(scoreList, fignum, evalType, testname):
                     else:
                         plt.plot(thresholdSetError, attr.precisionRateList,c = LINE_COLORS[i],
                                  label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
-                elif tracker == "HDT_cvpr2016" or tracker =='KCFvgg_rnn' or tracker =='KCFmulti_cnn':
+                elif tracker == "HDT_cvpr2016" or tracker =='KCFvgg_rnn' or tracker[:3] =='KCF':
                     plt.plot(thresholdSetError, attr.precisionRateList,
                         c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker, ave), lw=2.0, ls=ls)
             # else:
