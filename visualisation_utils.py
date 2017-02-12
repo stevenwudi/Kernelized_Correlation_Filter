@@ -172,7 +172,8 @@ def show_precision(positions, ground_truth, title):
     pylab.xlabel("Threshold")
     pylab.ylabel("Precision")
 
-    pylab.show()
+    pylab.draw()
+    pylab.waitforbuttonpress(5)
     return precisions
 
 
