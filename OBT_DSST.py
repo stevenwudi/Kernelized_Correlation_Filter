@@ -6,17 +6,29 @@ stevenwudi@gmail.com
 """
 import getopt
 import sys
-
+import dlib
 # some configurations files for OBT experiments, originally, I would never do that this way of importing,
 # it's simple way too ugly
 from config import *
 from scripts import *
 
-from KCFpy_debug import KCFTracker
+
+class DSST_tracker():
+    """
+    http://blog.dlib.net/2015/02/dlib-1813-released.html
+    Danelljan, Martin, et al. "Accurate scale estimation for robust visual tracking."
+    Proceedings of the British Machine Vision Conference BMVC. 2014.
+    """
+    def __init__(self):
+        self.name = 'DSST'
+        self.type = 'rect'
+        self.tracker = dlib.correlation_tracker()
+        self.res = []
+        self.feature_type = 'DSST_dlib'
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst', load_model=True, vgglayer='')]
+    trackers = [DSST_tracker()]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
@@ -63,17 +75,15 @@ def main(argv):
                 print ("Result of Sequences\t -- '{0}'".format(tracker.name))
                 for seq in seqs:
                     try:
-                        print('\t\'{0}\'{1}\taveCoverage : {2:.3f}%\taveErrCenter : {3:.3f}'.format(
-                            seq.name,
-                            " " * (12 - len(seq.name)),
-                            sum(seq.aveCoverage) / len(seq.aveCoverage) * 100,
-                            sum(seq.aveErrCenter) / len(seq.aveErrCenter)))
+                        print('\t{0} {1} \taveCoverage : {2:0.2f}, \taveErrCenter : {3:0.2f}'.format(seq.name,
+                              " " * (12 - len(seq.name)), sum(seq.aveCoverage) / len(seq.aveCoverage) * 100,
+                              sum(seq.aveErrCenter) / len(seq.aveErrCenter)))
                     except:
                         print('\t\'{0}\'  ERROR!!'.format(seq.name))
 
                 print("Result of attributes\t -- '{0}'".format(tracker.name))
                 for attr in attrList:
-                    print("\t\'{}\'\t overlap : {:04.2f}% \t\t failures : {:04.2f}".format(attr.name, attr.overlap, attr.error))
+                    print("\t {0}, \t overlap : {1:.1f}, \t failures : {2:.1f}".format(attr.name, attr.overlap, attr.error))
 
                 if SAVE_RESULT:
                     butil.save_scores(attrList)
@@ -103,6 +113,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
                 result_src = os.path.join(trk_src, s.name + '.json')
                 if os.path.exists(result_src):
                     seqResults = butil.load_seq_result(evalType, t, s.name)
+                    seqResults[0].resType = 'rect'
                     trackerResults[t].append(seqResults)
                     continue
             seqResults = []
@@ -117,7 +128,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
                 subS.name = s.name + '_' + str(idx)
 
                 ####################
-                t, res = run_KCF_variant(t, subS, debug=False)
+                t, res = run_KCF_variant(t, subS, debug=True)
                 ####################
                 if evalType == 'SRE':
                     r = Result(t.name, s.name, subS.startFrame, subS.endFrame,
@@ -142,38 +153,44 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
 
 
 def run_KCF_variant(tracker, seq, debug=False):
-    from keras.preprocessing import image
-    from visualisation_utils import plot_tracking_rect, show_precision
+    import cv2
+    import matplotlib.pyplot as plt
 
     start_time = time.time()
     tracker.res = []
-    start_frame = 0
-    for frame in range(start_frame, seq.endFrame - seq.startFrame+1):
+    if debug:
+        win = dlib.image_window()
+
+    for frame in range(seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
         image_path = os.path.join(seq.path, image_filename)
-        img_rgb = image.load_img(image_path)
-        img_rgb = image.img_to_array(img_rgb)
-        if frame == start_frame:
-            tracker.train(img_rgb, seq.gtRect[start_frame], seq.name)
+        img_rgb = cv2.imread(image_path)
+        img_rgb = img_rgb[:, :, ::-1]
+        if frame == 0:
+            rect = seq.gtRect[0]
+            gtRect = dlib.rectangle(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3])
+            tracker.tracker.start_track(img_rgb, gtRect)
+            tracker.res.append([gtRect.left(), gtRect.top(), gtRect.width(), gtRect.height()])
         else:
-            tracker.detect(img_rgb, frame)
+            tracker.tracker.update(img_rgb)
+            rect = tracker.tracker.get_position()
+            tracker.res.append([rect.left(), rect.top(), rect.width(), rect.height()])
 
-        if debug and frame > start_frame:
+        if debug and frame > 0:
             print("Frame ==", frame)
-            print('horiz_delta: %.2f, vert_delta: %.2f' % (tracker.horiz_delta, tracker.vert_delta))
             print("pos", np.array(tracker.res[-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
+            win.clear_overlay()
+            win.set_image(img_rgb)
+            win.add_overlay(tracker.tracker.get_position())
+            #plt.waitforbuttonpress(0.1)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time
     print("Frames-per-second:", tracker.fps)
 
-    if debug:
-        tracker.precisions = show_precision(np.array(tracker.res), np.array(seq.gtRect), seq.name)
-
-    res = {'type': tracker.type, 'res': tracker.res, 'fps': tracker.fps}
+    res = {'type': 'rect', 'res': tracker.res, 'fps': tracker.fps}
 
     return tracker, res
 

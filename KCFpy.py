@@ -10,7 +10,7 @@ from scipy.misc import imresize
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw', sub_feature_type='', debug=False, gt_type='rect', load_model=False):
+    def __init__(self, feature_type='raw', sub_feature_type='', debug=False, gt_type='rect', load_model=False, vgglayer=''):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -40,8 +40,6 @@ class KCFTracker:
         # OBT dataset need extra definition
         self.sub_feature_type = sub_feature_type
         self.name = 'KCF' + feature_type
-        if self.sub_feature_type:
-            self.name += '_'+sub_feature_type
         self.fps = -1
         self.type = gt_type
         self.res = []
@@ -90,17 +88,30 @@ class KCFTracker:
             if self.feature_type == 'vgg':
                 from keras.applications.vgg19 import VGG19
                 from keras.models import Model
+                if vgglayer[:6]=='block2':
+                    self.cell_size = 42
+                elif vgglayer[:6]=='block3':
+                    self.cell_size = 4
+                elif vgglayer[:6] == 'block4':
+                    self.cell_size = 8
+                elif vgglayer[:6] == 'block5':
+                    self.cell_size = 16
+                else:
+                    assert("not implemented")
+
                 self.base_model = VGG19(include_top=False, weights='imagenet')
-                self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block2_conv2').output)
+                self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block3_conv4').output)
             elif self.feature_type == 'resnet50':
                 from keras.applications.resnet50 import ResNet50
                 from keras.models import Model
                 self.base_model = ResNet50(weights='imagenet', include_top=False)
                 self.extract_model = Model(input=self.base_model.input,
                                            output=self.base_model.get_layer('activation_10').output)
-            self.cell_size = 2
+
             self.feature_bandwidth_sigma = 1
             self.adaptation_rate = 0.01
+            if self.sub_feature_type == 'grabcut':
+                self.grabcut_mask_path = './figures/grabcut_masks/'
         elif self.feature_type == 'vgg_rnn':
             from keras.applications.vgg19 import VGG19
             from keras.models import Model
@@ -209,7 +220,11 @@ class KCFTracker:
                 from keras.models import load_model
                 self.multi_cnn_model = load_model('./models/CNN_Model_OBT100_multi_cnn_final.h5')
 
-    def train(self, im, init_rect):
+        if self.sub_feature_type:
+            self.name += '_'+sub_feature_type
+            self.feature_correlation = None
+
+    def train(self, im, init_rect, seqname):
         """
         :param im: image should be of 3 dimension: M*N*C
         :param pos: the centre position of the target
@@ -223,7 +238,7 @@ class KCFTracker:
         self.first_target_sz = self.target_sz  # because we might introduce the scale changes in the detection
         # desired padded input, proportional to input target size
         self.patch_size = np.floor(self.target_sz * (1 + self.padding))
-        self.first_patch_sz = np.array(self.patch_size).astype(int)  # because we might introduce the scale changes in the detection
+        self.first_patch_sz = np.array(self.patch_size).astype(int)   # because we might introduce the scale changes in the detection
         # desired output (gaussian shaped), bandwidth proportional to target size
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
@@ -272,11 +287,16 @@ class KCFTracker:
 
         self.x = self.get_features()
         self.xf = self.fft2(self.x)
-        if self.feature_type == 'cnn' or self.feature_type == 'vgg':
-            corr = np.multiply(self.x, self.y[:, :, None])
+        if self.sub_feature_type == 'grabcut':
+            import matplotlib.image as mpimg
+            from skimage.transform import resize
+            img_grabcut = mpimg.imread(self.grabcut_mask_path+seqname+".png")
+            grabcut_shape = self.x.shape[:2]
+            img_grabcut = resize(img_grabcut, grabcut_shape)
+            corr = np.multiply(self.x, img_grabcut[:,:,None])
             corr = np.sum(np.sum(corr, axis=0), axis=0)
             # we compute the correlation of a filter within a layer to its features
-            self.feature_correlation = (corr-corr.min())/(corr.max()-corr.min())
+            self.feature_correlation = (corr - corr.min()) / (corr.max() - corr.min())
 
         if self.feature_type == 'multi_cnn':
             # multi_cnn will render the models to be of a list
@@ -288,11 +308,6 @@ class KCFTracker:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
             self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
             self.response = np.real(np.fft.ifft2(np.multiply(self.alphaf, self.fft2(k))))
-
-        # the first frame also need to be included!
-        self.res.append([min(self.im_sz[1] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
-                         min(self.im_sz[0] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
-                         self.target_sz[1], self.target_sz[0]])
 
     def detect(self, im, frame):
         """
@@ -469,7 +484,7 @@ class KCFTracker:
 
         return resized_im_array
 
-    def dense_gauss_kernel(self, sigma, xf, x, zf=None, z=None, feature_correlation=None):
+    def dense_gauss_kernel(self, sigma, xf, x, zf=None, z=None):
         """
         Gaussian Kernel with dense sampling.
         Evaluates a gaussian kernel with bandwidth SIGMA for all displacements
@@ -506,10 +521,7 @@ class KCFTracker:
             xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
         elif self.feature_type == 'vgg' or self.feature_type == 'resnet50' \
                 or self.feature_type == 'vgg_rnn' or self.feature_type == 'cnn' or self.feature_type =='multi_cnn':
-            if feature_correlation is None:
-                xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
-            else:
-                xyf_ifft = np.fft.ifft2(np.sum(np.multiply(xyf, self.feature_correlation[None, None, :]), axis=2))
+            xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
 
         row_shift, col_shift = np.floor(np.array(xyf_ifft.shape) / 2).astype(int)
         xy_complex = np.roll(xyf_ifft, row_shift, axis=0)
@@ -595,12 +607,10 @@ class KCFTracker:
                 else:
                     img_colour = self.im_crop - self.im_crop.mean()
                     features = np.multiply(img_colour, self.cos_window[:, :, None])
-                return features
 
         elif self.feature_type == 'dsst':
             img_colour = self.im_crop - self.im_crop.mean()
             features = np.multiply(img_colour, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
             if self.feature_type == 'vgg':
@@ -613,7 +623,6 @@ class KCFTracker:
             features = np.squeeze(features)
             features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
             features = np.multiply(features, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == 'vgg_rnn' or self.feature_type=='cnn':
             from keras.applications.vgg19 import preprocess_input
@@ -625,7 +634,6 @@ class KCFTracker:
             features = np.squeeze(features)
             features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
             features = np.multiply(features, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == "multi_cnn":
             from keras.applications.vgg19 import preprocess_input
@@ -639,9 +647,13 @@ class KCFTracker:
                 features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
                 features_list[i] = np.multiply(features, self.cos_window[i][:, :, None])
             return features_list
-
         else:
             assert 'Non implemented!'
+
+        if not (self.sub_feature_type=="" or self.feature_correlation is None):
+            features = np.multiply(features, self.feature_correlation[None, None, :])
+
+        return features
 
     def train_rnn(self, frame, im, init_rect, target_sz, img_rgb_next, next_rect, next_target_sz):
 
@@ -762,65 +774,157 @@ class KCFTracker:
         # ('fft2:', 0.22904396057128906)
         # ('guassian kernel + fft2: ', 0.20537400245666504)
 
-    def grabcut(self, im, init_rect):
+    def grabcut(self, im, init_rect, seq_name):
         """
          :param im: image should be of 3 dimension: M*N*C
          :param pos: the centre position of the target
          :param target_sz: target size
          """
+        import cv2
+        global img, img2, drawing, value, mask, rectangle, rect, rect_or_mask, ix, iy, rect_over
+        BLUE = [255, 0, 0]  # rectangle color
+        RED = [0, 0, 255]  # PR BG
+        GREEN = [0, 255, 0]  # PR FG
+        BLACK = [0, 0, 0]  # sure BG
+        WHITE = [255, 255, 255]  # sure FG
+
+        DRAW_BG = {'color': BLACK, 'val': 0}
+        DRAW_FG = {'color': WHITE, 'val': 1}
+        DRAW_PR_FG = {'color': GREEN, 'val': 3}
+        DRAW_PR_BG = {'color': RED, 'val': 2}
+
+        # setting up flags
+        rect = (0, 0, 1, 1)
+        drawing = False  # flag for drawing curves
+        rectangle = False  # flag for drawing rect
+        rect_over = False  # flag to check if rect drawn
+        rect_or_mask = 0  # flag for selecting rect or mask mode
+        value = DRAW_FG  # drawing initialized to FG
+        thickness = 3  # brush thickness
+
+        def onmouse(event, x, y, flags, param):
+            global img, img2, drawing, value, mask, rectangle, rect, rect_or_mask, ix, iy, rect_over
+
+            # Draw Rectangle
+            # if event == cv2.EVENT_RBUTTONDOWN:
+            #     rectangle = True
+            #     ix, iy = x, y
+            #
+            # elif event == cv2.EVENT_MOUSEMOVE:
+            #     if rectangle == True:
+            #         img = img2.copy()
+            #         cv2.rectangle(img, (ix, iy), (x, y), BLUE, 2)
+            #         rect = (min(ix, x), min(iy, y), abs(ix - x), abs(iy - y))
+            #         rect_or_mask = 0
+            #
+            # elif event == cv2.EVENT_RBUTTONUP:
+            #     rectangle = False
+            #     rect_over = True
+            #     cv2.rectangle(img, (ix, iy), (x, y), BLUE, 2)
+            #     rect = (min(ix, x), min(iy, y), abs(ix - x), abs(iy - y))
+            #     rect_or_mask = 0
+            #     print(" Now press the key 'n' a few times until no further change \n")
+
+            # draw touchup curves
+            if event == cv2.EVENT_LBUTTONDOWN:
+                rect_over = True
+                if rect_over == False:
+                    print("first draw rectangle \n")
+                else:
+                    drawing = True
+                    cv2.circle(img, (x, y), thickness, value['color'], -1)
+                    cv2.circle(mask, (x, y), thickness, value['val'], -1)
+
+            elif event == cv2.EVENT_MOUSEMOVE:
+                if drawing == True:
+                    cv2.circle(img, (x, y), thickness, value['color'], -1)
+                    cv2.circle(mask, (x, y), thickness, value['val'], -1)
+
+            elif event == cv2.EVENT_LBUTTONUP:
+                if drawing == True:
+                    drawing = False
+                    cv2.circle(img, (x, y), thickness, value['color'], -1)
+                    cv2.circle(mask, (x, y), thickness, value['val'], -1)
+
         self.pos = [init_rect[1] + init_rect[3] / 2., init_rect[0] + init_rect[2] / 2.]
         self.res.append(init_rect)
         # Duh OBT is the reverse
         self.target_sz = np.asarray(init_rect[2:])
         self.target_sz = self.target_sz[::-1]
         self.patch_size = np.floor(self.target_sz * (1 + self.padding))
-        self.im_sz = im.shape[1:]
+        self.first_patch_sz = np.array(self.patch_size).astype(int)
+        self.im_sz = im.shape[:2]
         ########################################################
         # let's try grabcut now!
         ########################################################
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
-        import cv2
-        from matplotlib.patches import Rectangle
-        # sz = self.target_sz.astype('uint8')
-        chosen_size = 2
-        sz = (self.patch_size * (chosen_size / 3.2))
-        im_crop = self.get_subwindow(im, self.pos, sz)
-        img = im_crop.transpose(1, 2, 0).astype('uint8')
+        sz = np.array(self.im_crop.shape[:2])
+        img = self.get_subwindow(im, self.pos, sz)
+        img2 = img.copy()
+        mask = np.zeros(img.shape[:2], dtype=np.uint8)  # mask initialized to PR_BG
+        output = np.zeros(img.shape, np.uint8)  # output image to be shown
 
-        coeff = 1.8
-        rect = tuple(np.array([sz[::-1] / 2 - self.target_sz[::-1] / 2 * coeff, self.target_sz[::-1] * coeff]).astype(np.uint8).flatten())
+        #####################################################
+        coeff = 1.5
+        rect = np.array([sz[::-1] / 2 - self.target_sz[::-1] / 2 * coeff, sz[::-1] / 2 + self.target_sz[::-1] / 2 * coeff]).astype(np.int).flatten()
 
-        mask = np.zeros(img.shape[:2], dtype='uint8')
-        bgdModel = np.zeros((1, 65))
-        fgdModel = np.zeros((1, 65))
+        # input and output windows
+        cv2.namedWindow('output')
+        cv2.namedWindow('input')
+        cv2.setMouseCallback('input', onmouse)
+        cv2.moveWindow('input', img.shape[1] + 10, 90)
+        cv2.rectangle(img, (rect[0], rect[1]), (rect[2], rect[3]), BLUE, 2)
 
-        cv2.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        while True:
+            cv2.imshow('output', output)
+            cv2.imshow('input', img)
+            k = 0xFF & cv2.waitKey(1)
+            # key bindings
+            if k == 27:  # esc to exit
+                break
+            elif k == ord('0'):  # BG drawing
+                print(" mark background regions with left mouse button \n")
+                value = DRAW_BG
+            elif k == ord('1'):  # FG drawing
+                print(" mark foreground regions with left mouse button \n")
+                value = DRAW_FG
+            elif k == ord('2'):  # PR_BG drawing
+                value = DRAW_PR_BG
+            elif k == ord('3'):  # PR_FG drawing
+                value = DRAW_PR_FG
+            elif k == ord('s'):  # save image
+                bar = np.zeros((img.shape[0], 5, 3), np.uint8)
+                res = np.hstack((img2, bar, img, bar, output))
+                #cv2.imwrite('./figures/grabcut_output.png', res)
+                cv2.imwrite('./figures/masks/'+seq_name+'.png', mask2)
+                print(" Result saved as image \n")
+                cv2.destroyAllWindows()
+                break
+            elif k == ord('r'):  # reset everything
+                print("resetting \n")
+                rect = (0, 0, 1, 1)
+                drawing = False
+                rectangle = False
+                rect_or_mask = 100
+                rect_over = False
+                value = DRAW_FG
+                img = img2.copy()
+                mask = np.zeros(img.shape[:2], dtype=np.uint8)  # mask initialized to PR_BG
+                output = np.zeros(img.shape, np.uint8)  # output image to be shown
+            elif k == ord('n'):  # segment the image
+                print(""" For finer touchups, mark foreground and background after pressing keys 0-3
+                and again press 'n' \n""")
+                if (rect_or_mask == 0):  # grabcut with rect
+                    bgdmodel = np.zeros((1, 65), np.float64)
+                    fgdmodel = np.zeros((1, 65), np.float64)
+                    rect_tuple = (rect[0], rect[1], rect[2]-rect[0], rect[3]-rect[1])
+                    cv2.grabCut(img2, mask, rect_tuple, bgdmodel, fgdmodel, 1, cv2.GC_INIT_WITH_RECT)
+                    rect_or_mask = 1
+                elif rect_or_mask == 1:  # grabcut with mask
+                    bgdmodel = np.zeros((1, 65), np.float64)
+                    fgdmodel = np.zeros((1, 65), np.float64)
+                    cv2.grabCut(img2, mask, rect_tuple, bgdmodel, fgdmodel, 1, cv2.GC_INIT_WITH_MASK)
 
-        mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
-        img_mask = img * mask2[:, :, np.newaxis]
+            mask2 = np.where((mask == 1) + (mask == 3), 255, 0).astype('uint8')
+            output = cv2.bitwise_and(img2, img2, mask=mask2)
 
-        plt.figure(1)
-        plt.clf()
-
-        plt.subplot(221)
-        plt.imshow(self.im_crop.transpose(1, 2, 0).astype('uint8'))
-        plt.title('original image patch')
-
-        tracking_figure_axes = plt.subplot(222)
-        tracking_rect = Rectangle(
-            xy=(rect[0], rect[1]),
-            width=rect[2],
-            height=rect[3],
-            facecolor='none',
-            edgecolor='r',
-        )
-        tracking_figure_axes.add_patch(tracking_rect)
-        plt.imshow(img)
-        plt.title('original image')
-
-        plt.subplot(223)
-        plt.imshow(img_mask)
-        plt.title('grabcut image')
-
-        plt.draw()
-        plt.waitforbuttonpress(0.5)

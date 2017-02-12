@@ -10,7 +10,7 @@ from scipy.misc import imresize
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw', sub_feature_type='', debug=False, gt_type='rect', load_model=False):
+    def __init__(self, feature_type='raw', sub_feature_type='', debug=False, gt_type='rect', load_model=False, vgglayer=''):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -40,13 +40,11 @@ class KCFTracker:
         # OBT dataset need extra definition
         self.sub_feature_type = sub_feature_type
         self.name = 'KCF' + feature_type
-        if self.sub_feature_type:
-            self.name += '_'+sub_feature_type
         self.fps = -1
         self.type = gt_type
         self.res = []
         self.im_sz = []
-        self.debug = debug # a flag indicating to plot the intermediate figures
+        self.debug = debug  # a flag indicating to plot the intermediate figures
         self.first_patch_sz = []
         self.first_target_sz = []
         self.currentScaleFactor = 1
@@ -90,15 +88,26 @@ class KCFTracker:
             if self.feature_type == 'vgg':
                 from keras.applications.vgg19 import VGG19
                 from keras.models import Model
+                if vgglayer[:6]=='block2':
+                    self.cell_size = 42
+                elif vgglayer[:6]=='block3':
+                    self.cell_size = 4
+                elif vgglayer[:6] == 'block4':
+                    self.cell_size = 8
+                elif vgglayer[:6] == 'block5':
+                    self.cell_size = 16
+                else:
+                    assert("not implemented")
+
                 self.base_model = VGG19(include_top=False, weights='imagenet')
-                self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block2_conv2').output)
+                self.extract_model = Model(input=self.base_model.input, output=self.base_model.get_layer('block3_conv4').output)
             elif self.feature_type == 'resnet50':
                 from keras.applications.resnet50 import ResNet50
                 from keras.models import Model
                 self.base_model = ResNet50(weights='imagenet', include_top=False)
                 self.extract_model = Model(input=self.base_model.input,
                                            output=self.base_model.get_layer('activation_10').output)
-            self.cell_size = 2
+
             self.feature_bandwidth_sigma = 1
             self.adaptation_rate = 0.01
             if self.sub_feature_type == 'grabcut':
@@ -172,7 +181,6 @@ class KCFTracker:
             import theano
 
             self.base_model = VGG19(include_top=False, weights='imagenet')
-
             self.extract_model_function = theano.function([self.base_model.input],
                                                           [self.base_model.get_layer('block1_conv2').output,
                                                            self.base_model.get_layer('block2_conv2').output,
@@ -209,7 +217,43 @@ class KCFTracker:
             # Embedding
             if load_model:
                 from keras.models import load_model
-                self.multi_cnn_model = load_model('./models/CNN_Model_OBT100_multi_cnn_final.h5')
+                if self.sub_feature_type=='class':
+                    self.multi_cnn_model = load_model('./models/CNN_Model_OBT100_multi_cnn_best_valid_cnn_cifar_small_batchnormalisation_class_scale.h5')
+                    from models.DataLoader import DataLoader
+                    loader = DataLoader(batch_size=32, filename="./data/OBT100_new_multi_cnn%d.hdf5")
+                    self.translation_value = np.asarray(loader.translation_value)
+                    self.scale_value = np.asarray(loader.scale_value)
+                else:
+                    self.multi_cnn_model = load_model('./trained_models/CNN_Model_OBT100_multi_cnn_final.h5')
+            if self.sub_feature_type=='dsst':
+                # this method adopts from the paper  Martin Danelljan, Gustav Hger, Fahad Shahbaz Khan and Michael Felsberg.
+                # "Accurate Scale Estimation for Robust Visual Tracking". (BMVC), 2014.
+                # The project website is: http: // www.cvl.isy.liu.se / research / objrec / visualtracking / index.html
+                self.scale_step = 1.01
+                self.nScales = 33
+                self.scaleFactors = self.scale_step ** (np.ceil(self.nScales * 1.0 / 2) - range(1, self.nScales + 1))
+                self.scale_window = np.hanning(self.nScales)
+                self.scale_sigma_factor = 1. / 4
+                self.scale_sigma = self.nScales / np.sqrt(self.nScales) * self.scale_sigma_factor
+                self.ys = np.exp(
+                    -0.5 * ((range(1, self.nScales + 1) - np.ceil(self.nScales * 1.0 / 2)) ** 2) / self.scale_sigma ** 2)
+                self.ysf = np.fft.fft(self.ys)
+                self.min_scale_factor = []
+                self.max_scale_factor = []
+                self.xs = []
+                self.xsf = []
+                self.sf_num = []
+                self.sf_den = []
+                # we use linear kernel as in the BMVC2014 paper
+                self.new_sf_num = []
+                self.new_sf_den = []
+                self.scale_response = []
+                self.lambda_scale = 1e-2
+                self.adaptation_rate = 0.005
+
+        if self.sub_feature_type:
+            self.name += '_'+sub_feature_type
+            self.feature_correlation = None
 
     def train(self, im, init_rect, seqname):
         """
@@ -219,13 +263,15 @@ class KCFTracker:
         """
         self.pos = [init_rect[1]+init_rect[3]/2., init_rect[0]+init_rect[2]/2.]
         self.res.append(init_rect)
+        # for scaling, we always need to set it to 1
+        self.currentScaleFactor = 1
         # Duh OBT is the reverse
         self.target_sz = np.asarray(init_rect[2:])
         self.target_sz = self.target_sz[::-1]
         self.first_target_sz = self.target_sz  # because we might introduce the scale changes in the detection
         # desired padded input, proportional to input target size
         self.patch_size = np.floor(self.target_sz * (1 + self.padding))
-        self.first_patch_sz = np.array(self.patch_size).astype(int)  # because we might introduce the scale changes in the detection
+        self.first_patch_sz = np.array(self.patch_size).astype(int)   # because we might introduce the scale changes in the detection
         # desired output (gaussian shaped), bandwidth proportional to target size
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
@@ -259,41 +305,41 @@ class KCFTracker:
             self.im_sz = im.shape
             self.min_scale_factor = self.scale_step **(np.ceil(np.log(max(5. / self.patch_size)) / np.log(self.scale_step)))
             self.max_scale_factor = self.scale_step **(np.log(min(np.array(self.im_sz[:2]).astype(float) / self.target_sz)) / np.log(self.scale_step))
-
             self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
             self.xsf = np.fft.fftn(self.xs, axes=[0])
             # we use linear kernel as in the BMVC2014 paper
             self.new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
             self.new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
-
         elif self.feature_type == 'vgg' or self.feature_type == 'resnet50' or \
                         self.feature_type == 'vgg_rnn' or self.feature_type == 'cnn' or self.feature_type == 'multi_cnn':
             self.im_sz = im.shape[1:]
-
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
-
         self.x = self.get_features()
         self.xf = self.fft2(self.x)
         if self.sub_feature_type == 'grabcut':
             import matplotlib.image as mpimg
-            img_rgb = mpimg.imread(self.grabcut_mask_path+seqname+".png")
-            corr = np.multiply(self.x, img_rgb)
+            from skimage.transform import resize
+            img_grabcut = mpimg.imread(self.grabcut_mask_path+seqname+".png")
+            grabcut_shape = self.x.shape[:2]
+            img_grabcut = resize(img_grabcut, grabcut_shape)
+            corr = np.multiply(self.x, img_grabcut[:,:,None])
             corr = np.sum(np.sum(corr, axis=0), axis=0)
             # we compute the correlation of a filter within a layer to its features
             self.feature_correlation = (corr - corr.min()) / (corr.max() - corr.min())
-
-        # if self.feature_type == 'cnn' or self.feature_type == 'vgg':
-        #     corr = np.multiply(self.x, self.y[:, :, None])
-        #     corr = np.sum(np.sum(corr, axis=0), axis=0)
-        #     # we compute the correlation of a filter within a layer to its features
-        #     self.feature_correlation = (corr-corr.min())/(corr.max()-corr.min())
-
         if self.feature_type == 'multi_cnn':
             # multi_cnn will render the models to be of a list
             self.alphaf = []
             for i in range(len(self.x)):
                 k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf[i], self.x[i])
                 self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + self.lambda_value))
+            if self.sub_feature_type == 'dsst':
+                self.min_scale_factor = self.scale_step ** (np.ceil(np.log(max(5. / self.patch_size)) / np.log(self.scale_step)))
+                self.max_scale_factor = self.scale_step ** (np.log(min(np.array(self.im_sz[:2]).astype(float) / self.target_sz)) / np.log(self.scale_step))
+                self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
+                self.xsf = np.fft.fftn(self.xs, axes=[0])
+                # we use linear kernel as in the BMVC2014 paper
+                self.sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
+                self.sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
         else:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
             self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
@@ -394,37 +440,64 @@ class KCFTracker:
 
             self.pos = [max(self.target_sz[0] / 2, min(self.pos[0], self.im_sz[0] - self.target_sz[0] / 2)),
                         max(self.target_sz[1] / 2, min(self.pos[1], self.im_sz[1] - self.target_sz[1] / 2))]
-
         elif self.feature_type == 'multi_cnn':
             response_all = np.zeros(shape=(5, self.resize_size[0], self.resize_size[1]))
+            if self.sub_feature_type == 'class':
+                max_list = [np.max(x) for x in self.response]
             for i in range(len(self.response)):
                 response_all[i, :, :] = imresize(self.response[i], size=self.resize_size)
+                if self.sub_feature_type == 'class':
+                    response_all[i, :, :] = np.multiply(response_all[i, :, :], max_list[i]).astype('uint8')
 
             response_all = response_all.astype('float32') / 255. - 0.5
             self.response_all = response_all
             response_all = np.expand_dims(response_all, axis=0)
             predicted_output = self.multi_cnn_model.predict(response_all, batch_size=1)
 
-            # target location is at the maximum response. We must take into account the fact that, if
-            # the target doesn't move, the peak will appear at the top-left corner, not at the centre
-            # (this is discussed in the paper Fig. 6). The response map wrap around cyclically.
-            self.vert_delta, self.horiz_delta = \
-                [self.target_sz[0] * predicted_output[0][0], self.target_sz[1] * predicted_output[0][1]]
-            self.pos = [self.pos[0] + self.target_sz[0] * predicted_output[0][0],
-                        self.pos[1] + self.target_sz[1] * predicted_output[0][1]]
+            if self.sub_feature_type=='class':
+                translational_x = np.dot(predicted_output[0], self.translation_value)
+                translational_y = np.dot(predicted_output[1], self.translation_value)
+                scale_change = np.dot(predicted_output[2], self.scale_value)
+                # translational_x = self.translation_value[np.argmax(predicted_output[0])]
+                # translational_y = self.translation_value[np.argmax(predicted_output[1])]
+                # scale_change = self.scale_value[np.argmax(predicted_output[2])]
+                # calculate the new target size
+                self.target_sz = np.divide(self.target_sz, scale_change)
+                # we also require the target size to be smaller than the image size deivided by paddings
+                self.target_sz = [min(self.im_sz[0], self.target_sz[0]), min(self.im_sz[1], self.target_sz[1])]
+                self.patch_size = np.multiply(self.target_sz, (1 + self.padding))
 
-            self.pos = [max(self.target_sz[0] / 2, min(self.pos[0], self.im_sz[0] - self.target_sz[0] / 2)),
-                        max(self.target_sz[1] / 2, min(self.pos[1], self.im_sz[1] - self.target_sz[1] / 2))]
+                self.vert_delta, self.horiz_delta = \
+                    [self.target_sz[0] * translational_x, self.target_sz[1] * translational_y]
 
+                self.pos = [self.pos[0] + self.target_sz[0] * translational_x,
+                            self.pos[1] + self.target_sz[1] * translational_y]
+                self.pos = [max(self.target_sz[0] / 2, min(self.pos[0], self.im_sz[0] - self.target_sz[0] / 2)),
+                            max(self.target_sz[1] / 2, min(self.pos[1], self.im_sz[1] - self.target_sz[1] / 2))]
+
+            else:
                 ##################################################################################
+                # we need to train the tracker again for scaling, it's almost the replicate of train
+                ##################################################################################
+
+                # target location is at the maximum response. We must take into account the fact that, if
+                # the target doesn't move, the peak will appear at the top-left corner, not at the centre
+                # (this is discussed in the paper Fig. 6). The response map wrap around cyclically.
+                self.vert_delta, self.horiz_delta = \
+                    [self.target_sz[0] * predicted_output[0][0], self.target_sz[1] * predicted_output[0][1]]
+                self.pos = [self.pos[0] + self.target_sz[0] * predicted_output[0][0],
+                            self.pos[1] + self.target_sz[1] * predicted_output[0][1]]
+
+                self.pos = [max(self.target_sz[0] / 2, min(self.pos[0], self.im_sz[0] - self.target_sz[0] / 2)),
+                            max(self.target_sz[1] / 2, min(self.pos[1], self.im_sz[1] - self.target_sz[1] / 2))]
+            ##################################################################################
             # we need to train the tracker again for scaling, it's almost the replicate of train
             ##################################################################################
             # calculate the new target size
             # scale_change = predicted_output[0][2:]
             # self.target_sz = np.multiply(self.target_sz, scale_change.mean())
             # we also require the target size to be smaller than the image size deivided by paddings
-            # self.target_sz = [min(self.im_sz[0], self.target_sz[0]), min(self.im_sz[1] , self.target_sz[1])]
-            # self.patch_size = np.multiply(self.target_sz, (1 + self.padding))
+
 
         ##################################################################################
         # we need to train the tracker again here, it's almost the replicate of train
@@ -440,6 +513,16 @@ class KCFTracker:
                 self.x[i] = (1 - self.adaptation_rate) * self.x[i] + self.adaptation_rate * x_new[i]
                 self.xf[i] = (1 - self.adaptation_rate) * self.xf[i] + self.adaptation_rate * xf_new[i]
                 self.alphaf[i] = (1 - self.adaptation_rate) * self.alphaf[i] + self.adaptation_rate * alphaf_new
+
+            if self.sub_feature_type == 'dsst':
+                # we use linear kernel as in the BMVC2014 paper
+                self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
+                self.xsf = np.fft.fftn(self.xs, axes=[0])
+                new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
+                new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
+                self.sf_num = (1 - self.adaptation_rate) * self.sf_num + self.adaptation_rate * new_sf_num
+                self.sf_den = (1 - self.adaptation_rate) * self.sf_den + self.adaptation_rate * new_sf_den
+
         else:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new, x_new)
             kf = self.fft2(k)
@@ -453,28 +536,27 @@ class KCFTracker:
                          min(self.im_sz[0] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
                          self.target_sz[1], self.target_sz[0]])
 
+        if self.sub_feature_type == 'dsst':
+            self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
+            self.xsf = np.fft.fftn(self.xs, axes=[0])
+            # calculate the correlation response of the scale filter
+            scale_response_fft = np.divide(np.multiply(self.sf_num, self.xsf),
+                                           (self.sf_den[:, None] + self.lambda_scale))
+            scale_reponse = np.real(np.fft.ifftn(np.sum(scale_response_fft, axis=1)))
+            recovered_scale = np.argmax(scale_reponse)
+            # update the scale
+            self.currentScaleFactor *= self.scaleFactors[recovered_scale]
+            if self.currentScaleFactor < self.min_scale_factor:
+                self.currentScaleFactor = self.min_scale_factor
+            elif self.currentScaleFactor > self.max_scale_factor:
+                self.currentScaleFactor = self.max_scale_factor
+
+            self.target_sz = np.multiply(self.currentScaleFactor, self.first_target_sz)
+            self.patch_size = np.multiply(self.target_sz, (1 + self.padding))
+
         return self.pos
 
-    def get_scale_sample(self, im, scaleFactors):
-        """
-        Extract a sample fro the scale filter at the current location and scale
-        :param im:
-        :return:
-        """
-        import cv2
-        from hog import hog
-        resized_im_array = np.zeros((len(self.scaleFactors), int(np.floor(self.first_target_sz[0]/4) * np.floor(self.first_target_sz[1]/4) * 31)))
-        for i, s in enumerate(scaleFactors):
-            patch_sz = np.floor(self.first_target_sz * s)
-            im_patch = self.get_subwindow(im, self.pos, patch_sz)  # extract image
-            im_patch_resized = imresize(im_patch, self.first_target_sz)  #resize image to model size
-            img_gray = cv2.cvtColor(im_patch_resized, cv2.COLOR_BGR2GRAY)
-            features_hog, hog_image = hog(img_gray, orientations=31, pixels_per_cell=(4, 4), cells_per_block=(1, 1))
-            resized_im_array[i, :] = np.multiply(features_hog.flatten(), self.scale_window[i])
-
-        return resized_im_array
-
-    def dense_gauss_kernel(self, sigma, xf, x, zf=None, z=None, feature_correlation=None):
+    def dense_gauss_kernel(self, sigma, xf, x, zf=None, z=None):
         """
         Gaussian Kernel with dense sampling.
         Evaluates a gaussian kernel with bandwidth SIGMA for all displacements
@@ -511,10 +593,7 @@ class KCFTracker:
             xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
         elif self.feature_type == 'vgg' or self.feature_type == 'resnet50' \
                 or self.feature_type == 'vgg_rnn' or self.feature_type == 'cnn' or self.feature_type =='multi_cnn':
-            if feature_correlation is None:
-                xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
-            else:
-                xyf_ifft = np.fft.ifft2(np.sum(np.multiply(xyf, self.feature_correlation[None, None, :]), axis=2))
+            xyf_ifft = np.fft.ifft2(np.sum(xyf, axis=2))
 
         row_shift, col_shift = np.floor(np.array(xyf_ifft.shape) / 2).astype(int)
         xy_complex = np.roll(xyf_ifft, row_shift, axis=0)
@@ -600,12 +679,10 @@ class KCFTracker:
                 else:
                     img_colour = self.im_crop - self.im_crop.mean()
                     features = np.multiply(img_colour, self.cos_window[:, :, None])
-                return features
 
         elif self.feature_type == 'dsst':
             img_colour = self.im_crop - self.im_crop.mean()
             features = np.multiply(img_colour, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == 'vgg' or self.feature_type == 'resnet50':
             if self.feature_type == 'vgg':
@@ -618,7 +695,6 @@ class KCFTracker:
             features = np.squeeze(features)
             features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
             features = np.multiply(features, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == 'vgg_rnn' or self.feature_type=='cnn':
             from keras.applications.vgg19 import preprocess_input
@@ -630,7 +706,6 @@ class KCFTracker:
             features = np.squeeze(features)
             features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
             features = np.multiply(features, self.cos_window[:, :, None])
-            return features
 
         elif self.feature_type == "multi_cnn":
             from keras.applications.vgg19 import preprocess_input
@@ -644,9 +719,26 @@ class KCFTracker:
                 features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
                 features_list[i] = np.multiply(features, self.cos_window[i][:, :, None])
             return features_list
-
         else:
             assert 'Non implemented!'
+
+        if not (self.sub_feature_type=="" or self.feature_correlation is None):
+            features = np.multiply(features, self.feature_correlation[None, None, :])
+
+        return features
+
+    def get_scale_sample(self, im, scaleFactors):
+        from pyhog import pyhog
+        #resized_im_array = np.zeros((len(self.scaleFactors), int(np.floor(self.first_target_sz[0]/4) * np.floor(self.first_target_sz[1]/4) * 31)))
+        resized_im_array = []
+        for i, s in enumerate(scaleFactors):
+            patch_sz = np.floor(self.first_target_sz * s)
+            im_patch = self.get_subwindow(im, self.pos, patch_sz)  # extract image
+            im_patch_resized = imresize(im_patch, self.first_target_sz)  #resize image to model size
+            features_hog = pyhog.features_pedro(im_patch_resized.astype(np.float64)/255.0, 4)
+            resized_im_array.append(np.multiply(features_hog.flatten(), self.scale_window[i]))
+
+        return np.asarray(resized_im_array)
 
     def train_rnn(self, frame, im, init_rect, target_sz, img_rgb_next, next_rect, next_target_sz):
 

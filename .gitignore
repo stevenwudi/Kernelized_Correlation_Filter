@@ -135,3 +135,10 @@ crashlytics-build.properties
 fabric.properties
 
 .idea/
+/trained_models
+/figures
+/data
+/models
+/results
+/results_TB100
+/results_TB50

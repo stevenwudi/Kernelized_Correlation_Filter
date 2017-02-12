@@ -90,7 +90,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(0, numSeq):
+    for idxSeq in range(1, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 
@@ -117,7 +117,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
                 subS.name = s.name + '_' + str(idx)
 
                 ####################
-                t, res = run_KCF_variant(t, subS, debug=False)
+                t, res = run_KCF_variant(t, subS, debug=True)
                 ####################
                 if evalType == 'SRE':
                     r = Result(t.name, s.name, subS.startFrame, subS.endFrame,

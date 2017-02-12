@@ -51,29 +51,9 @@ def main(argv):
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
         ######################################################################
-        trackerResults = run_trackers(trackers, seqs, evalType)
-        ######################################################################
-        for tracker in trackers: 
-                ######################################################################
-                evalResults, attrList = butil.calc_result(tracker, seqs, trackerResults, evalType)
-                ######################################################################
-                print("Result of Sequences\t -- '{0}'".format(tracker.name))
-                for seq in seqs:
-                    try:
-                        print('\t\'{0}\'{1}'.format(seq.name, " " * (12 - len(seq.name))))
-                        print("\taveCoverage : {0:.3f}%".format(sum(seq.aveCoverage) / len(seq.aveCoverage) * 100))
-                        print("\taveErrCenter : {0:.3f}".format(sum(seq.aveErrCenter) / len(seq.aveErrCenter)))
-                    except:
-                        print('\t\'{0}\'  ERROR!!'.format(seq.name))
+        run_trackers(trackers, seqs, evalType)
 
-                print("Result of attributes\t -- '{0}'".format(tracker.name))
-                for attr in attrList:
-                    print("\t\'{0}\'".format(attr.name))
-                    print("\toverlap : {0:02.1f}%".format(attr.overlap))
-                    print("\tfailures : {0:.1f}".format(attr.error))
-
-                if SAVE_RESULT:
-                    butil.save_scores(attrList)
+    return 1
 
 
 def run_trackers(trackers, seqs, evalType):
