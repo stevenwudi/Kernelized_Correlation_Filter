@@ -61,9 +61,10 @@ def main(argv):
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
                 ######################################################################
                 print ("Result of Sequences\t -- '{0}'".format(tracker.name))
-                for seq in seqs:
+                for i, seq in enumerate(seqs):
                     try:
-                        print('\t\'{0}\'{1}\taveCoverage : {2:.3f}%\taveErrCenter : {3:.3f}'.format(
+                        print('\t{0}:\'{1}\'{2}\taveCoverage : {3:.3f}%\taveErrCenter : {4:.3f}'.format(
+                            i,
                             seq.name,
                             " " * (12 - len(seq.name)),
                             sum(seq.aveCoverage) / len(seq.aveCoverage) * 100,
@@ -90,7 +91,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(1, numSeq):
+    for idxSeq in range(7, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 
@@ -146,8 +147,8 @@ def run_KCF_variant(tracker, seq, debug=False):
     from visualisation_utils import plot_tracking_rect, show_precision
 
     start_time = time.time()
-    tracker.res = []
     start_frame = 0
+    tracker.res = []
     for frame in range(start_frame, seq.endFrame - seq.startFrame+1):
         image_filename = seq.s_frames[frame]
         image_path = os.path.join(seq.path, image_filename)
@@ -155,6 +156,7 @@ def run_KCF_variant(tracker, seq, debug=False):
         img_rgb = image.img_to_array(img_rgb)
         if frame == start_frame:
             tracker.train(img_rgb, seq.gtRect[start_frame], seq.name)
+            print('currentScaleFactor: %.2f' % tracker.currentScaleFactor)
         else:
             tracker.detect(img_rgb, frame)
 

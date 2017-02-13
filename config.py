@@ -15,7 +15,7 @@ SETUP_SEQ = False
 
 SAVE_RESULT = True
 
-OVERWRITE_RESULT = False
+OVERWRITE_RESULT = True
 
 DOWNLOAD_SEQS = True
 DOWNLOAD_URL = "http://cvlab.hanyang.ac.kr/tracker_benchmark/seq_new/{0}.zip"

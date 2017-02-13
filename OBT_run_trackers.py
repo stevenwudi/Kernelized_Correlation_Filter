@@ -61,9 +61,10 @@ def main(argv):
                 evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
                 ######################################################################
                 print ("Result of Sequences\t -- '{0}'".format(tracker.name))
-                for seq in seqs:
+                for i, seq in enumerate(seqs):
                     try:
-                        print('\t\'{0}\'{1}\taveCoverage : {2:.3f}%\taveErrCenter : {3:.3f}'.format(
+                        print('\t{0}:\'{1}\'{2}\taveCoverage : {3:.3f}%\taveErrCenter : {4:.3f}'.format(
+                            i,
                             seq.name,
                             " " * (12 - len(seq.name)),
                             sum(seq.aveCoverage) / len(seq.aveCoverage) * 100,

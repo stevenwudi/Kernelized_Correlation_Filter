@@ -195,7 +195,7 @@ class KCFTracker:
             self.response_size = [self.resize_size[0] / self.cell_size,
                                   self.resize_size[1] / self.cell_size]
             self.feature_bandwidth_sigma = 0.2
-            self.adaptation_rate = 0.001
+            self.adaptation_rate = 0.0025
             # store pre-computed cosine window, here is a multiscale CNN, here we have 5 layers cnn:
             self.cos_window = []
             self.y = []
@@ -250,7 +250,7 @@ class KCFTracker:
                 self.new_sf_den = []
                 self.scale_response = []
                 self.lambda_scale = 1e-2
-                self.adaptation_rate_scale = 0.01
+                self.adaptation_rate_scale = 0.005
 
         if self.sub_feature_type:
             self.name += '_'+sub_feature_type
