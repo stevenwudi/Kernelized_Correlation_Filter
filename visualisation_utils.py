@@ -1,5 +1,3 @@
-
-
 import matplotlib.cm as cm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,9 +28,6 @@ def make_mosaic(imgs, nrows, ncols, border=1):
     nimgs = imgs.shape[0]
     imshape = imgs.shape[1:]
 
-    # mosaic = ma.masked_all((nrows * imshape[0] + (nrows - 1) * border,
-    #                         ncols * imshape[1] + (ncols - 1) * border),
-    #                        dtype=np.float32)
     if len(imgs.shape) == 4:
         mosaic = np.zeros((nrows * imshape[0] + (nrows - 1) * border,
                            ncols * imshape[1] + (ncols - 1) * border, 3),
@@ -53,14 +48,14 @@ def make_mosaic(imgs, nrows, ncols, border=1):
         col * paddedw:col * paddedw + imshape[1]] = imgs[i]
     return mosaic
 
-    # plt.imshow(make_mosaic(np.random.random((9, 10, 10)), 3, 3, border=1))
-
 
 def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
     from matplotlib.patches import Rectangle
     plt.figure(1)
     plt.clf()
 
+    # figManager = plt.get_current_fig_manager()
+    # figManager.window.showMaximized()
     # Because of PIL read image
     if img_rgb.shape[0] == 3:
         img_rgb = img_rgb.transpose(1, 2, 0)/255.
@@ -120,6 +115,9 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
         features = tracker.x[0].transpose(2, 0, 1) / tracker.x[0].max()
         plt.imshow(make_mosaic(features[:9], 3, 3, border=1))
         plt.title('%s, FIRST conv layer output' % tracker.feature_type)
+        if tracker.sub_sub_feature_type == 'adapted_lr':
+            plt.title("ALR: %0.4f, stability: %0.3f" %
+                      (tracker.adaptation_rate, tracker.stability))
     else:
         plt.imshow((tracker.x - tracker.x.min())/(tracker.x.max()-tracker.x.min()))
         plt.title('Feature used is %s' % tracker.feature_type)
@@ -127,9 +125,10 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
     plt.subplot(224)
     if tracker.feature_type == 'multi_cnn':
         plt.imshow(make_mosaic(tracker.response_all[:5], 2, 3, border=5))
+        plt.title('response [%s]' % ', '.join("{0:.2f}".format(x) for x in tracker.max_list))
     else:
         plt.imshow(tracker.response)
-    plt.title('response')
+        plt.title('response')
     plt.colorbar()
 
     plt.draw()

@@ -122,7 +122,8 @@ def load_all_scores(evalType, testname):
 def load_scores(evalType, tracker, testname):
     resultSRC = RESULT_SRC.format(evalType)
     print 'Loading \'{0}\'...'.format(tracker)
-    if tracker[:3] == 'KCF' or tracker[:4] == 'DSST':
+    if tracker[:3] == 'KCF' or tracker[:4] == 'DSST' or tracker[:4]=='MEEM'\
+            or tracker[:4]=='MUST':
         src = os.path.join(resultSRC, tracker + '/scores')
     else:
         src = os.path.join(resultSRC, tracker + '/scores_{0}'.format(testname))

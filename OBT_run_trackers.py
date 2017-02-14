@@ -13,11 +13,12 @@ from config import *
 from scripts import *
 
 from KCFpy_debug import KCFTracker
+OVERWRITE_RESULT = False
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst', load_model=True, vgglayer='')]
-    #evalTypes = ['OPE', 'SRE', 'TRE']
+    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='')]    #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
     try:
@@ -110,7 +111,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
             seqLen = len(subSeqs)
             for idx in range(seqLen):
                 print('{0}_{1}, {2}_{3}:{4}/{5} - {6}'.format(
-                    idxTrk + 1, t.feature_type, idxSeq + 1, s.name, idx + 1, seqLen, evalType))
+                    idxTrk + 1, t.name, idxSeq + 1, s.name, idx + 1, seqLen, evalType))
                 rp = tmpRes_path + '_' + t.feature_type + '_' + str(idx + 1) + '/'
                 if SAVE_IMAGE and not os.path.exists(rp):
                     os.makedirs(rp)
@@ -156,7 +157,6 @@ def run_KCF_variant(tracker, seq, debug=False):
         img_rgb = image.img_to_array(img_rgb)
         if frame == start_frame:
             tracker.train(img_rgb, seq.gtRect[start_frame], seq.name)
-            print('currentScaleFactor: %.2f' % tracker.currentScaleFactor)
         else:
             tracker.detect(img_rgb, frame)
 
