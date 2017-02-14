@@ -17,7 +17,9 @@ OVERWRITE_RESULT = True
 
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='')]
+                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+                           model_path='./trained_models/multicnn_maximum_best_valid_sequential_1.h5',
+                           cnn_maximum=True)]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
@@ -87,12 +89,11 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
         os.makedirs(tmpRes_path)
 
     numSeq = len(seqs)
-
     trackerResults = dict((t, list()) for t in trackers)
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(37, numSeq):
+    for idxSeq in range(1, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 

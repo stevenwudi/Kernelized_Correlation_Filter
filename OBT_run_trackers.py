@@ -18,7 +18,7 @@ OVERWRITE_RESULT = False
 
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='')]    #evalTypes = ['OPE', 'SRE', 'TRE']
+                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='')]
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
     try:

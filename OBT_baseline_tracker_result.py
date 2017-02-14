@@ -20,7 +20,7 @@ class Tracker:
         self.name=name
 
 def main(argv):
-    t = Tracker(name='MUSTer')
+    t = Tracker(name='HDT_cvpr2016')
     trackers = [t]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
@@ -59,6 +59,9 @@ def main(argv):
         ######################################################################
         trackerResults = run_trackers(trackers, seqs, evalType, shiftTypeSet)
         ######################################################################
+
+        for s in seqs:
+            s.name = s.name.lower()
         for tracker in trackers:
             results = trackerResults[tracker]
             if len(results) > 0:
@@ -108,6 +111,12 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
                 result_src = os.path.join(trk_src, s.name + '.json')
                 if os.path.exists(result_src):
                     seqResults = butil.load_seq_result(evalType, t, s.name)
+                    trackerResults[t].append(seqResults)
+                    continue
+                # for HDT, the name of first is lower letter, duh!!!
+                result_src = os.path.join(trk_src, s.name.lower() + '.json')
+                if os.path.exists(result_src):
+                    seqResults = butil.load_seq_result(evalType, t, s.name.lower())
                     trackerResults[t].append(seqResults)
                     continue
             seqResults = []

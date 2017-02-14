@@ -10,7 +10,10 @@ from scipy.misc import imresize
 
 
 class KCFTracker:
-    def __init__(self, feature_type='raw', sub_feature_type='', debug=False, gt_type='rect', load_model=False, vgglayer=''):
+    def __init__(self, feature_type='raw', sub_feature_type='', sub_sub_feature_type='',
+                 debug=False, gt_type='rect', load_model=False, vgglayer='',
+                 model_path='./trained_models/CNN_Model_OBT100_multi_cnn_final.h5',
+                 cnn_maximum=False):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -39,6 +42,7 @@ class KCFTracker:
         self.horiz_delta = 0
         # OBT dataset need extra definition
         self.sub_feature_type = sub_feature_type
+        self.sub_sub_feature_type = sub_sub_feature_type
         self.name = 'KCF' + feature_type
         self.fps = -1
         self.type = gt_type
@@ -201,6 +205,8 @@ class KCFTracker:
             self.y = []
             self.yf = []
             self.response_all = []
+            self.max_list = []
+
             for i in range(5):
                 cos_wind_sz = np.divide(self.resize_size, 2**i)
                 self.cos_window.append(np.outer(np.hanning(cos_wind_sz[0]), np.hanning(cos_wind_sz[1])))
@@ -225,7 +231,8 @@ class KCFTracker:
                     self.translation_value = np.asarray(loader.translation_value)
                     self.scale_value = np.asarray(loader.scale_value)
                 else:
-                    self.multi_cnn_model = load_model('./trained_models/CNN_Model_OBT100_multi_cnn_final.h5')
+                    self.multi_cnn_model = load_model(model_path)
+                    self.cnn_maximum = cnn_maximum
             if self.sub_feature_type=='dsst':
                 # this method adopts from the paper  Martin Danelljan, Gustav Hger, Fahad Shahbaz Khan and Michael Felsberg.
                 # "Accurate Scale Estimation for Robust Visual Tracking". (BMVC), 2014.
@@ -252,9 +259,25 @@ class KCFTracker:
                 self.lambda_scale = 1e-2
                 self.adaptation_rate_scale = 0.005
 
+                if sub_sub_feature_type == 'adapted_lr':
+                    self.sub_sub_feature_type = sub_sub_feature_type
+                    self.acc_time = 5
+                    self.loss = np.zeros(shape=(self.acc_time, 5))
+                    self.loss_mean = np.zeros(shape=(self.acc_time, 5))
+                    self.loss_std = np.zeros(shape=(self.acc_time, 5))
+                    self.adaptation_rate_range = [0.005, 0.0]
+                    self.adaptation_rate_scale_range = [0.005, 0.00]
+                    self.adaptation_rate = self.adaptation_rate_range[0]
+                    self.adaptation_rate_scale = self.adaptation_rate_scale_range[0]
+                    self.stability = 1
+
         if self.sub_feature_type:
             self.name += '_'+sub_feature_type
             self.feature_correlation = None
+            if self.sub_sub_feature_type:
+                self.name += '_' + sub_sub_feature_type
+            if self.cnn_maximum:
+                self.name += '_cnn_maximum'
 
     def train(self, im, init_rect, seqname):
         """
@@ -442,12 +465,27 @@ class KCFTracker:
                         max(self.target_sz[1] / 2, min(self.pos[1], self.im_sz[1] - self.target_sz[1] / 2))]
         elif self.feature_type == 'multi_cnn':
             response_all = np.zeros(shape=(5, self.resize_size[0], self.resize_size[1]))
-            if self.sub_feature_type == 'class':
-                max_list = [np.max(x) for x in self.response]
+            self.max_list = [np.max(x) for x in self.response]
+            if self.sub_sub_feature_type == 'adapted_lr':
+                loss_idx = np.mod(frame, self.acc_time)
+                self.loss[loss_idx] = 1 - np.asarray(self.max_list)
+                self.loss_mean = np.mean(self.loss, axis=0)
+                self.loss_std = np.std(self.loss, axis=0)
+
+                if frame > self.acc_time:
+                    stability_coeff = np.abs(self.loss[loss_idx]-self.loss_mean) / self.loss_std
+                    self.stability = np.mean(np.exp(-stability_coeff))
+                    # stability value is small(0), object is stable, adaptive learning rate is increased to maximum
+                    # stability value is big(1), object is not stable, adaptive learning rate is decreased to minimum
+                    self.adaptation_rate = max(0, self.adaptation_rate_range[1] + \
+                                           self.stability*(self.adaptation_rate_range[0] - self.adaptation_rate_range[1]))
+                    self.adaptation_rate_scale = max(0, self.adaptation_rate_scale_range[1] + \
+                                                 self.stability*(self.adaptation_rate_scale_range[0] - self.adaptation_rate_scale_range[1]))
+
             for i in range(len(self.response)):
                 response_all[i, :, :] = imresize(self.response[i], size=self.resize_size)
-                if self.sub_feature_type == 'class':
-                    response_all[i, :, :] = np.multiply(response_all[i, :, :], max_list[i]).astype('uint8')
+                if self.sub_feature_type == 'class' or self.cnn_maximum:
+                    response_all[i, :, :] = np.multiply(response_all[i, :, :], self.max_list[i])
 
             response_all = response_all.astype('float32') / 255. - 0.5
             self.response_all = response_all

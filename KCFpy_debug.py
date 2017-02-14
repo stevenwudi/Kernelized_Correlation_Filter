@@ -11,7 +11,9 @@ from scipy.misc import imresize
 
 class KCFTracker:
     def __init__(self, feature_type='raw', sub_feature_type='', sub_sub_feature_type='',
-                 debug=False, gt_type='rect', load_model=False, vgglayer=''):
+                 debug=False, gt_type='rect', load_model=False, vgglayer='',
+                 model_path='./trained_models/CNN_Model_OBT100_multi_cnn_final.h5',
+                 cnn_maximum=False):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -229,7 +231,8 @@ class KCFTracker:
                     self.translation_value = np.asarray(loader.translation_value)
                     self.scale_value = np.asarray(loader.scale_value)
                 else:
-                    self.multi_cnn_model = load_model('./trained_models/CNN_Model_OBT100_multi_cnn_final.h5')
+                    self.multi_cnn_model = load_model(model_path)
+                    self.cnn_maximum = cnn_maximum
             if self.sub_feature_type=='dsst':
                 # this method adopts from the paper  Martin Danelljan, Gustav Hger, Fahad Shahbaz Khan and Michael Felsberg.
                 # "Accurate Scale Estimation for Robust Visual Tracking". (BMVC), 2014.
@@ -262,8 +265,8 @@ class KCFTracker:
                     self.loss = np.zeros(shape=(self.acc_time, 5))
                     self.loss_mean = np.zeros(shape=(self.acc_time, 5))
                     self.loss_std = np.zeros(shape=(self.acc_time, 5))
-                    self.adaptation_rate_range = [0.01, 0]
-                    self.adaptation_rate_scale_range = [0.01, 0]
+                    self.adaptation_rate_range = [0.005, 0.0]
+                    self.adaptation_rate_scale_range = [0.005, 0.00]
                     self.adaptation_rate = self.adaptation_rate_range[0]
                     self.adaptation_rate_scale = self.adaptation_rate_scale_range[0]
                     self.stability = 1
@@ -273,6 +276,8 @@ class KCFTracker:
             self.feature_correlation = None
             if self.sub_sub_feature_type:
                 self.name += '_' + sub_sub_feature_type
+            if self.cnn_maximum:
+                self.name += '_cnn_maximum'
 
     def train(self, im, init_rect, seqname):
         """
@@ -472,15 +477,15 @@ class KCFTracker:
                     self.stability = np.mean(np.exp(-stability_coeff))
                     # stability value is small(0), object is stable, adaptive learning rate is increased to maximum
                     # stability value is big(1), object is not stable, adaptive learning rate is decreased to minimum
-                    self.adaptation_rate = self.adaptation_rate_range[1] + \
-                                           self.stability*(self.adaptation_rate_range[0] - self.adaptation_rate_range[1])
-                    self.adaptation_rate_scale = self.adaptation_rate_scale_range[1] + \
-                                                 self.stability*(self.adaptation_rate_scale_range[0] - self.adaptation_rate_scale_range[1])
+                    self.adaptation_rate = max(0, self.adaptation_rate_range[1] + \
+                                           self.stability*(self.adaptation_rate_range[0] - self.adaptation_rate_range[1]))
+                    self.adaptation_rate_scale = max(0, self.adaptation_rate_scale_range[1] + \
+                                                 self.stability*(self.adaptation_rate_scale_range[0] - self.adaptation_rate_scale_range[1]))
 
             for i in range(len(self.response)):
                 response_all[i, :, :] = imresize(self.response[i], size=self.resize_size)
-                if self.sub_feature_type == 'class':
-                    response_all[i, :, :] = np.multiply(response_all[i, :, :], self.max_list[i]).astype('uint8')
+                if self.sub_feature_type == 'class' or self.cnn_maximum:
+                    response_all[i, :, :] = np.multiply(response_all[i, :, :], self.max_list[i])
 
             response_all = response_all.astype('float32') / 255. - 0.5
             self.response_all = response_all
