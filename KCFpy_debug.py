@@ -13,7 +13,7 @@ class KCFTracker:
     def __init__(self, feature_type='raw', sub_feature_type='', sub_sub_feature_type='',
                  debug=False, gt_type='rect', load_model=False, vgglayer='',
                  model_path='./trained_models/CNN_Model_OBT100_multi_cnn_final.h5',
-                 cnn_maximum=False):
+                 cnn_maximum=False, name_suffix=""):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -279,6 +279,8 @@ class KCFTracker:
             if self.cnn_maximum:
                 self.name += '_cnn_maximum'
 
+        self.name += name_suffix
+
     def train(self, im, init_rect, seqname):
         """
         :param im: image should be of 3 dimension: M*N*C
@@ -537,6 +539,27 @@ class KCFTracker:
         ##################################################################################
         # we need to train the tracker again here, it's almost the replicate of train
         ##################################################################################
+        if self.sub_feature_type == 'dsst':
+            self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
+            self.xsf = np.fft.fftn(self.xs, axes=[0])
+            # calculate the correlation response of the scale filter
+            scale_response_fft = np.divide(np.multiply(self.sf_num, self.xsf),
+                                           (self.sf_den[:, None] + self.lambda_scale))
+            scale_reponse = np.real(np.fft.ifftn(np.sum(scale_response_fft, axis=1)))
+            recovered_scale = np.argmax(scale_reponse)
+            # update the scale
+            self.currentScaleFactor *= self.scaleFactors[recovered_scale]
+            if self.currentScaleFactor < self.min_scale_factor:
+                self.currentScaleFactor = self.min_scale_factor
+            elif self.currentScaleFactor > self.max_scale_factor:
+                self.currentScaleFactor = self.max_scale_factor
+            # we only update the target size here.
+            new_target_sz = np.multiply(self.currentScaleFactor, self.first_target_sz)
+            self.pos -= (new_target_sz-self.target_sz)/2
+            self.target_sz = new_target_sz
+            self.patch_size = np.multiply(self.target_sz, (1 + self.padding))
+
+        # we update the model from here
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         x_new = self.get_features()
         xf_new = self.fft2(x_new)
@@ -549,21 +572,14 @@ class KCFTracker:
                 self.x[i] = (1 - self.adaptation_rate) * self.x[i] + self.adaptation_rate * x_new[i]
                 self.xf[i] = (1 - self.adaptation_rate) * self.xf[i] + self.adaptation_rate * xf_new[i]
                 self.alphaf[i] = (1 - self.adaptation_rate) * self.alphaf[i] + self.adaptation_rate * alphaf_new
-
             if self.sub_feature_type == 'dsst':
                 self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
                 self.xsf = np.fft.fftn(self.xs, axes=[0])
-                # calculate the correlation response of the scale filter
-                scale_response_fft = np.divide(np.multiply(self.sf_num, self.xsf),
-                                               (self.sf_den[:, None] + self.lambda_scale))
-                scale_reponse = np.real(np.fft.ifftn(np.sum(scale_response_fft, axis=1)))
-                recovered_scale = np.argmax(scale_reponse)
-                # update the scale
-                self.currentScaleFactor *= self.scaleFactors[recovered_scale]
-                if self.currentScaleFactor < self.min_scale_factor:
-                    self.currentScaleFactor = self.min_scale_factor
-                elif self.currentScaleFactor > self.max_scale_factor:
-                    self.currentScaleFactor = self.max_scale_factor
+                # we use linear kernel as in the BMVC2014 paper
+                new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
+                new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
+                self.sf_num = (1 - self.adaptation_rate_scale) * self.sf_num + self.adaptation_rate * new_sf_num
+                self.sf_den = (1 - self.adaptation_rate_scale) * self.sf_den + self.adaptation_rate * new_sf_den
         else:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new, x_new)
             kf = self.fft2(k)
@@ -576,19 +592,6 @@ class KCFTracker:
         self.res.append([min(self.im_sz[1] - self.target_sz[1], max(0, self.pos[1] - self.target_sz[1] / 2.)),
                          min(self.im_sz[0] - self.target_sz[0], max(0, self.pos[0] - self.target_sz[0] / 2.)),
                          self.target_sz[1], self.target_sz[0]])
-
-        if self.sub_feature_type == 'dsst':
-            self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
-            self.xsf = np.fft.fftn(self.xs, axes=[0])
-            # we use linear kernel as in the BMVC2014 paper
-            new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
-            new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
-            self.sf_num = (1 - self.adaptation_rate_scale) * self.sf_num + self.adaptation_rate * new_sf_num
-            self.sf_den = (1 - self.adaptation_rate_scale) * self.sf_den + self.adaptation_rate * new_sf_den
-
-            # we only update the target size here.
-            self.target_sz = np.multiply(self.currentScaleFactor, self.first_target_sz)
-            self.patch_size = np.multiply(self.target_sz, (1 + self.padding))
 
         return self.pos
 
@@ -765,7 +768,6 @@ class KCFTracker:
 
     def get_scale_sample(self, im, scaleFactors):
         from pyhog import pyhog
-        #resized_im_array = np.zeros((len(self.scaleFactors), int(np.floor(self.first_target_sz[0]/4) * np.floor(self.first_target_sz[1]/4) * 31)))
         resized_im_array = []
         for i, s in enumerate(scaleFactors):
             patch_sz = np.floor(self.first_target_sz * s)

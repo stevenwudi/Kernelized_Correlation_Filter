@@ -80,8 +80,8 @@ def load_all_seq_configs():
         seqs.append(seq)
     return seqs
 
-def load_seq_configs(seqNames):
-    return [load_seq_config(x) for x in seqNames]
+shiftTypeSet = ['left','right','up','down','topLeft','topRight',
+        'bottomLeft', 'bottomRight','scale_8','scale_9','scale_11','scale_12']
 
 def get_seq_names(loadSeqs):
     if type(loadSeqs) is list:

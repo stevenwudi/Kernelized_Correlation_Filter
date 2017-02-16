@@ -35,12 +35,31 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
                     ls = '--'
                 ave = sum(attr.successRateList) /100. / float(len(attr.successRateList))
                 if type(tracker) == dict:
+                    if tracker['name'] == 'DSST':
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
+                    elif tracker['name'] == 'MEEM':
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('MEEM_ECCV14', ave), lw=2.0,
+                                 ls=ls)
+                    elif tracker['name'] == 'MUSTer':
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
+                    elif tracker['name'][:3] =='HDT':
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                            c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls = ls)
+                    elif tracker['name'] == 'KCFraw_colour':
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0,
+                                 ls=ls)
                     # Wudi's modification:
-                    plt.plot(thresholdSetOverlap, attr.successRateList,
-                        c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
+                    else:
+                        plt.plot(thresholdSetOverlap, attr.successRateList,
+                            c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
                 else:
                     plt.plot(thresholdSetOverlap, attr.successRateList,
                         c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker, ave), lw=2.0, ls=ls)
+
             else:
                 plt.plot(thresholdSetOverlap, attr.successRateList, 
                     label='', alpha=0.5, c='#202020', ls='--')
@@ -82,7 +101,19 @@ def plot_graph_precision(scoreList, fignum, evalType, testname):
                     # Wudi's modification:
                     if tracker['name']=='DSST':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_dlib', ave), lw=2.0, ls=ls)
+                                 label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
+                    elif tracker['name'] == 'MEEM':
+                        plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
+                                 label='{0} [{1:.2f}]'.format('MEEM_ECCV14', ave), lw=2.0, ls=ls)
+                    elif tracker['name'] == 'MUSTer':
+                        plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
+                                 label='{0} [{1:.2f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
+                    elif tracker['name'][:3] == 'HDT':
+                        plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
+                                 label='{0} [{1:.2f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls=ls)
+                    elif tracker['name'] == 'KCFraw_colour':
+                        plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
+                             label='{0} [{1:.2f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0, ls=ls)
                     else:
                         plt.plot(thresholdSetError, attr.precisionRateList,c = LINE_COLORS[i],
                                  label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)

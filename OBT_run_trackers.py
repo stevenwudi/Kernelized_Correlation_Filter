@@ -13,12 +13,14 @@ from config import *
 from scripts import *
 
 from KCFpy_debug import KCFTracker
-OVERWRITE_RESULT = False
+OVERWRITE_RESULT = True
 
 
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='')]
+                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                           name_suffix='_best_valid_CNN')]
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
     try:
