@@ -13,7 +13,7 @@ from scripts.model.result import Result
 
 
 # some global variables here
-OVERWRITE_RESULT = False
+OVERWRITE_RESULT = True
 SETUP_SEQ = False
 SAVE_RESULT = True
 SRC_DIR = '/home/stevenwudi/Documents/Python_Project/UAV/UAV123'
@@ -26,8 +26,8 @@ ANNO_DIR = os.path.join(SRC_DIR, 'anno', EVAL_SEQ)
 def main():
     tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
                            sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-                           model_path='./trained_models/multicnn_maximum_best_valid_sequential_1.h5',
-                           cnn_maximum=True)
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                           name_suffix='_best_valid_CNN')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'
@@ -73,7 +73,7 @@ def run_trackers(tracker, seqs, evalType):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(20, numSeq):
+    for idxSeq in range(0, numSeq):
         subS = seqs[idxSeq]
         if not OVERWRITE_RESULT:
             trk_src = os.path.join(RESULT_SRC.format(evalType), tracker.name)

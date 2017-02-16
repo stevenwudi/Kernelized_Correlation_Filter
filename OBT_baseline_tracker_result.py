@@ -20,7 +20,7 @@ class Tracker:
         self.name=name
 
 def main(argv):
-    t = Tracker(name='HDT_cvpr2016')
+    t = Tracker(name='DSST')
     trackers = [t]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
