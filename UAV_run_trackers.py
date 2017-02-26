@@ -26,8 +26,8 @@ ANNO_DIR = os.path.join(SRC_DIR, 'anno', EVAL_SEQ)
 def main():
     tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
                            sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-                           model_path='./trained_models/multicnn_maximum_best_valid_sequential_1.h5',
-                           cnn_maximum=True)
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                           name_suffix='_best_valid_CNN')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'
