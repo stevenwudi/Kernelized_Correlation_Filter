@@ -159,7 +159,7 @@ def load_seq_result(result_src):
 def save_scores(scoreList, RESULT_SRC, testname=None):
     tracker = scoreList[0].tracker
     evalType = scoreList[0].evalType
-    trkSrc = RESULT_SRC.format(evalType) + tracker
+    trkSrc = RESULT_SRC.format(evalType) + tracker.name
     if testname == None:
         scoreSrc = trkSrc + '/scores'
     else:
@@ -167,8 +167,8 @@ def save_scores(scoreList, RESULT_SRC, testname=None):
     if not os.path.exists(scoreSrc):
         os.makedirs(scoreSrc)
     for score in scoreList:
-        if score.tracker == 'KCF':
-            score.tracker = score.tracker
+        if score.tracker.name[:3] == 'KCF':
+            score.tracker = score.tracker.name
             # the following two attributes can not be copied, we need to delete them
             # if hasattr(score.tracker, 'extract_model'):
             #     del score.tracker.extract_model
@@ -179,4 +179,3 @@ def save_scores(scoreList, RESULT_SRC, testname=None):
         scoreFile = open(fileName, 'wb')
         scoreFile.write(string)
     scoreFile.close()
-

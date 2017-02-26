@@ -2,7 +2,7 @@ from config import *
 from scripts import *
 import scripts.butil
 
-def calc_result(tracker, seqs, results, evalType):
+def calc_result(tracker, seqs, results, evalType, SRC_DIR):
 
     seqResultList = dict((s.name,list()) for s in seqs)
     for i in range(len(results)):
@@ -32,7 +32,7 @@ def calc_result(tracker, seqs, results, evalType):
                 else:
                     anno = seq.gtRect[result.startFrame-1:
                         result.endFrame]
-
+            print(seq.name)
             aveCoverage, aveErrCenter, errCoverage, errCenter = \
                 scripts.butil.calc_seq_err_robust(result, anno)
             seq.aveCoverage.append(aveCoverage)
@@ -44,7 +44,16 @@ def calc_result(tracker, seqs, results, evalType):
         #end for j
     # end for i
 
-    attrList = getScoreList()
+    def getScoreList(SRC_DIR):
+        srcAttrFile = open(SRC_DIR + ATTR_DESC_FILE)
+        attrLines = srcAttrFile.readlines()
+        attrList = []
+        for line in attrLines:
+            attr = Score.getScoreFromLine(line)
+            attrList.append(attr)
+        return attrList
+
+    attrList = getScoreList(SRC_DIR)
     allAttr = Score('ALL', 'All attributes', tracker, evalType)
     allSuccessRateList = []
     attrList.append(allAttr)
