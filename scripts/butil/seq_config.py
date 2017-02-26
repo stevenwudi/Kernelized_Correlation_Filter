@@ -63,6 +63,9 @@ def save_seq_config(seq):
     configFile.write(string)
     configFile.close()
 
+def load_seq_configs(seqNames):
+    return [load_seq_config(x) for x in seqNames]
+
 def load_seq_config(seqName):
     src = os.path.join(SEQ_SRC, seqName)
     configFile = open(src+'/cfg.json')
@@ -278,3 +281,4 @@ def download_and_extract_file(url, dst, ext_dst):
     z.extractall(ext_dst)
     f.close()
     os.remove(dst)
+

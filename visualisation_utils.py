@@ -49,7 +49,7 @@ def make_mosaic(imgs, nrows, ncols, border=1):
     return mosaic
 
 
-def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
+def plot_tracking_rect(frame, img_rgb, tracker, gtRect, wait_second=0.001):
     from matplotlib.patches import Rectangle
     plt.figure(1)
     plt.clf()
@@ -115,9 +115,8 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
         features = tracker.x[0].transpose(2, 0, 1) / tracker.x[0].max()
         plt.imshow(make_mosaic(features[:9], 3, 3, border=1))
         plt.title('%s, FIRST conv layer output' % tracker.feature_type)
-        if tracker.sub_sub_feature_type == 'adapted_lr':
-            plt.title("ALR: %0.4f, stability: %0.3f" %
-                      (tracker.adaptation_rate, tracker.stability))
+        if tracker.sub_sub_feature_type [:10] == 'adapted_lr':
+            plt.title("ALR: %s" % (', '.join("{0:.4f}".format(x) for x in tracker.adaptation_rate)))
     else:
         plt.imshow((tracker.x - tracker.x.min())/(tracker.x.max()-tracker.x.min()))
         plt.title('Feature used is %s' % tracker.feature_type)
@@ -132,10 +131,10 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect):
     plt.colorbar()
 
     plt.draw()
-    plt.waitforbuttonpress(0.001)
+    plt.waitforbuttonpress(wait_second)
 
 
-def show_precision(positions, ground_truth, title):
+def show_precision(positions, ground_truth, title, wait_second=5):
     """
     Calculates precision for a series of distance thresholds (percentage of
     frames where the distance to the ground truth is within the threshold).
@@ -172,7 +171,7 @@ def show_precision(positions, ground_truth, title):
     pylab.ylabel("Precision")
 
     pylab.draw()
-    pylab.waitforbuttonpress(5)
+    pylab.waitforbuttonpress(wait_second)
     return precisions
 
 
@@ -311,3 +310,40 @@ def load_video_info(video_path):
 
     ret = [img_files, pos, target_sz, resize_image, ground_truth, video_path]
     return ret
+
+
+def plot_tracking_result(frame, img_rgb, result, gtRect, wait_second=0.5):
+    from matplotlib.patches import Rectangle
+    plt.figure(1)
+    plt.clf()
+
+    # figManager = plt.get_current_fig_manager()
+    # figManager.window.showMaximized()
+    # Because of PIL read image
+    if img_rgb.shape[0] == 3:
+        img_rgb = img_rgb.transpose(1, 2, 0)/255.
+
+    tracking_figure_axes = plt.subplot(111)
+    tracking_rect = Rectangle(
+        xy=(result['res'][frame-1][0], result['res'][frame-1][1]),
+        width=result['res'][frame-1][2],
+        height=result['res'][frame-1][3],
+        facecolor='none',
+        edgecolor='r',
+        )
+
+    gt_rect = Rectangle(
+        xy=(gtRect[frame - 1][0], gtRect[frame - 1][1]),
+        width=gtRect[frame - 1][2],
+        height=gtRect[frame - 1][3],
+        facecolor='none',
+        edgecolor='g',
+    )
+
+    tracking_figure_axes.add_patch(tracking_rect)
+    tracking_figure_axes.add_patch(gt_rect)
+    plt.imshow(img_rgb)
+    plt.title('frame: %d' % frame)
+    plt.draw()
+    plt.waitforbuttonpress(wait_second)
+

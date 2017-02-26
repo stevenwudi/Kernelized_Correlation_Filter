@@ -13,16 +13,15 @@ from config import *
 from scripts import *
 
 from KCFpy_debug import KCFTracker
-OVERWRITE_RESULT = True
+OVERWRITE_RESULT = False
 
 
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                           name_suffix='_best_valid_CNN')]
+                           sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5')]
     evalTypes = ['OPE']
-    loadSeqs = 'TB50'
+    loadSeqs = 'TB100'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
@@ -61,7 +60,7 @@ def main(argv):
             results = trackerResults[tracker]
             if len(results) > 0:
                 ######################################################################
-                evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
+                evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType, SEQ_SRC)
                 ######################################################################
                 print ("Result of Sequences\t -- '{0}'".format(tracker.name))
                 for i, seq in enumerate(seqs):
