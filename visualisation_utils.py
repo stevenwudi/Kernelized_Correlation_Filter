@@ -96,7 +96,7 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect, wait_second=0.001):
     # green_label = mpatches.Patch(color='green', label='gt')
     # plt.legend(handles=[red_label, green_label])
     plt.imshow(img_rgb)
-    plt.title('frame: %d' % frame)
+    plt.title('Total frame: %d, current: %d' % (len(gtRect), frame))
 
     plt.subplot(222)
     if tracker.feature_type == 'vgg' or tracker.feature_type == 'resnet50' or tracker.feature_type == 'vgg_rnn' \
@@ -113,9 +113,9 @@ def plot_tracking_rect(frame, img_rgb, tracker, gtRect, wait_second=0.001):
         plt.imshow(make_mosaic(features[:9], 3, 3, border=1))
     elif tracker.feature_type == 'multi_cnn':
         features = tracker.x[0].transpose(2, 0, 1) / tracker.x[0].max()
-        plt.imshow(make_mosaic(features[:9], 3, 3, border=1))
+        plt.imshow(make_mosaic(features[:36], 6, 6, border=1))
         plt.title('%s, FIRST conv layer output' % tracker.feature_type)
-        if tracker.sub_sub_feature_type [:10] == 'adapted_lr':
+        if tracker.sub_sub_feature_type == 'adapted_lr_hdt':
             plt.title("ALR: %s" % (', '.join("{0:.4f}".format(x) for x in tracker.adaptation_rate)))
     else:
         plt.imshow((tracker.x - tracker.x.min())/(tracker.x.max()-tracker.x.min()))
@@ -343,7 +343,7 @@ def plot_tracking_result(frame, img_rgb, result, gtRect, wait_second=0.5):
     tracking_figure_axes.add_patch(tracking_rect)
     tracking_figure_axes.add_patch(gt_rect)
     plt.imshow(img_rgb)
-    plt.title('frame: %d' % frame)
+    plt.title('Total frame: %d, current: %d' % (len(gtRect), frame))
     plt.draw()
     plt.waitforbuttonpress(wait_second)
 

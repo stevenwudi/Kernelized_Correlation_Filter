@@ -20,10 +20,11 @@ def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
                            sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
                            model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                           acc_time=5,
-                           reg_method=1,
-                           reg_min=0,
-                           reg_mul=1)]
+                           acc_time=5)]
+
+                           # reg_method=1,
+                           # reg_min=0,
+                           # reg_mul=1)]
                            # model_path='./trained_models/multicnn_maximum_best_valid_sequential_1.h5',
                            # cnn_maximum=True)]
     #evalTypes = ['OPE', 'SRE', 'TRE']
@@ -99,7 +100,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(50, numSeq):
+    for idxSeq in range(84, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 

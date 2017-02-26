@@ -9,7 +9,8 @@ WORKDIR = os.path.abspath('.')
 SEQ_SRC = '/home/stevenwudi/Documents/Python_Project/OBT/tracker_benchmark/data/'
 
 #RESULT_SRC = './results/{0}/' # '{0} : OPE, SRE, TRE'
-RESULT_SRC = './results_TB50/{0}/' # '{0} : OPE, SRE, TRE'
+RESULT_SRC = './results_TB100/{0}/' # '{0} : OPE, SRE, TRE'
+
 
 SETUP_SEQ = False
 

@@ -20,11 +20,11 @@ class Tracker:
         self.name=name
 
 def main(argv):
-    t = Tracker(name='DSST')
+    t = Tracker(name='HDT_cvpr2016')
     trackers = [t]
     #evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
-    loadSeqs = 'TB50'
+    loadSeqs = 'TB100'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:
@@ -66,7 +66,7 @@ def main(argv):
             results = trackerResults[tracker]
             if len(results) > 0:
                 ######################################################################
-                evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType)
+                evalResults, attrList = butil.calc_result(tracker, seqs, results, evalType, SEQ_SRC)
                 ######################################################################
                 print ("Result of Sequences\t -- '{0}'".format(tracker.name))
                 for i, seq in enumerate(seqs):
@@ -89,10 +89,6 @@ def main(argv):
 
 
 def run_trackers(trackers, seqs, evalType, shiftTypeSet):
-    tmpRes_path = RESULT_SRC.format('tmp/{0}/'.format(evalType))
-    if not os.path.exists(tmpRes_path):
-        os.makedirs(tmpRes_path)
-
     numSeq = len(seqs)
 
     trackerResults = dict((t, list()) for t in trackers)
@@ -124,9 +120,6 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
             for idx in range(seqLen):
                 print('{0}_{1}, {2}_{3}:{4}/{5} - {6}'.format(
                     idxTrk + 1, t.name, idxSeq + 1, s.name, idx + 1, seqLen, evalType))
-                rp = tmpRes_path + '_' + t.name + '_' + str(idx + 1) + '/'
-                if SAVE_IMAGE and not os.path.exists(rp):
-                    os.makedirs(rp)
                 subS = subSeqs[idx]
                 subS.name = s.name + '_' + str(idx)
 

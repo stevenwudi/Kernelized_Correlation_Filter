@@ -19,7 +19,11 @@ OVERWRITE_RESULT = True
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
                            sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
-                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5')]
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                           adaptation_rate_range_max=0.005,
+                           adaptation_rate_scale_range_max=0.01,
+                           name_suffix='_adl_0.005'
+                           )]
     evalTypes = ['OPE']
     loadSeqs = 'TB100'
     try:
@@ -93,7 +97,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(0, 50):
+    for idxSeq in range(0, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 

@@ -7,21 +7,14 @@ modified by Di Wu
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imresize
+from skimage.transform import resize
 
 
 class KCFTracker:
     def __init__(self, feature_type='raw', sub_feature_type='', sub_sub_feature_type='',
                  debug=False, gt_type='rect', load_model=False, vgglayer='',
                  model_path='./trained_models/CNN_Model_OBT100_multi_cnn_final.h5',
-                 cnn_maximum=False, name_suffix="", feature_bandwidth_sigma=0.2,
-                 adaptation_rate_range_max=0.0025,
-                 adaptation_rate_scale_range_max=0.005,
-                 padding=2.2,
-                 lambda_value=1e-4,
-                 acc_time=5,
-                 reg_method=0,
-                 reg_min=0.1,
-                 reg_mul=1e-3):
+                 cnn_maximum=False, name_suffix="", saliency_method=None, spatial_reg=0):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -30,8 +23,8 @@ class KCFTracker:
             "CNN":
         """
         # parameters according to the paper --
-        self.padding = padding  # extra area surrounding the target
-        self.lambda_value = lambda_value  # regularization
+        self.padding = 2.2  # extra area surrounding the target
+        self.lambda_value = 1e-4  # regularization
         self.spatial_bandwidth_sigma_factor = 1 / float(16)
         self.feature_type = feature_type
         self.patch_size = []
@@ -206,7 +199,7 @@ class KCFTracker:
             self.cell_size = 4
             self.response_size = [self.resize_size[0] / self.cell_size,
                                   self.resize_size[1] / self.cell_size]
-            self.feature_bandwidth_sigma = feature_bandwidth_sigma
+            self.feature_bandwidth_sigma = 0.2
             self.adaptation_rate = 0.0025
             # store pre-computed cosine window, here is a multiscale CNN, here we have 5 layers cnn:
             self.cos_window = []
@@ -267,19 +260,17 @@ class KCFTracker:
                 self.lambda_scale = 1e-2
                 self.adaptation_rate_scale = 0.005
 
-                if sub_sub_feature_type == 'adapted_lr' or sub_sub_feature_type == 'adapted_lr_hdt':
+                if sub_sub_feature_type == 'adapted_lr':
                     self.sub_sub_feature_type = sub_sub_feature_type
-                    self.acc_time = acc_time
+                    self.acc_time = 5
                     self.loss = np.zeros(shape=(self.acc_time, 5))
                     self.loss_mean = np.zeros(shape=(self.acc_time, 5))
                     self.loss_std = np.zeros(shape=(self.acc_time, 5))
-                    self.adaptation_rate_range = [adaptation_rate_range_max, 0.0]
-                    self.adaptation_rate_scale_range = [adaptation_rate_scale_range_max, 0.00]
+                    self.adaptation_rate_range = [0.005, 0.0]
+                    self.adaptation_rate_scale_range = [0.005, 0.00]
                     self.adaptation_rate = self.adaptation_rate_range[0]
                     self.adaptation_rate_scale = self.adaptation_rate_scale_range[0]
                     self.stability = 1
-                    if sub_sub_feature_type == 'adapted_lr_hdt':
-                        self.adaptation_rate = np.ones(shape=(5)) * self.adaptation_rate_range[0]
 
         if self.sub_feature_type:
             self.name += '_'+sub_feature_type
@@ -289,12 +280,14 @@ class KCFTracker:
             if self.cnn_maximum:
                 self.name += '_cnn_maximum'
 
-        self.reg_method = reg_method
-        self.reg_min = reg_min
-        self.reg_mul = reg_mul
+
+        self.saliency_method = saliency_method
+        self.feature_correlation = None
+        self.spatial_reg = spatial_reg
+
         self.name += name_suffix
 
-    def train(self, im, init_rect, seqname):
+    def train(self, im, init_rect, seqname, img_saliency_origin=None):
         """
         :param im: image should be of 3 dimension: M*N*C
         :param pos: the centre position of the target
@@ -355,9 +348,10 @@ class KCFTracker:
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         self.x = self.get_features()
         self.xf = self.fft2(self.x)
+
         if self.sub_feature_type == 'grabcut':
             import matplotlib.image as mpimg
-            from skimage.transform import resize
+
             img_grabcut = mpimg.imread(self.grabcut_mask_path+seqname+".png")
             grabcut_shape = self.x.shape[:2]
             img_grabcut = resize(img_grabcut, grabcut_shape)
@@ -365,32 +359,38 @@ class KCFTracker:
             corr = np.sum(np.sum(corr, axis=0), axis=0)
             # we compute the correlation of a filter within a layer to its features
             self.feature_correlation = (corr - corr.min()) / (corr.max() - corr.min())
+
+        ############### saliency incorporation ##########################
         if self.feature_type == 'multi_cnn':
             # multi_cnn will render the models to be of a list
+
+            if img_saliency_origin is not None:
+                from skimage.transform import resize
+                self.feature_correlation = []
+                img_saliency_crop = self.get_subwindow(img_saliency_origin, self.pos, self.patch_size)
+                self.img_saliency_crop = img_saliency_crop.mean(axis=0) / 255.
+                for i in range(len(self.x)):
+                    saliency_shape = self.x[i].shape[:2]
+                    img_saliency = resize(self.img_saliency_crop, saliency_shape)
+                    corr = np.multiply(self.x[i], img_saliency[:, :, None])
+                    corr = np.sum(np.sum(corr, axis=0), axis=0)
+                    # we compute the correlation of a filter within a layer to its features
+                    self.feature_correlation.append((corr - corr.min()) / (corr.max() - corr.min()))
+                    if self.saliency_method == 1:
+                        self.x[i] *= self.feature_correlation[-1]
+                        self.xf[i] *= self.feature_correlation[-1]
+
             self.alphaf = []
             for i in range(len(self.x)):
                 k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf[i], self.x[i])
-                if self.reg_method:
-                    reg_map = self.fft2(1-self.y[i] + self.reg_min)
-                    reg_map = np.fft.fftshift(np.fft.fftshift(reg_map, axes=0), axes=1)
-                    reg = np.multiply(reg_map, np.conj(reg_map))
-                    alphaf_new = np.divide(self.yf[i], self.fft2(k) + reg * self.reg_mul)
-                    self.alphaf.append(alphaf_new)
-                    if False:
-                        plt.figure(1)
-                        alpha_real = np.real(np.multiply(alphaf_new, np.conj(alphaf_new)))
-                        alpha_real = np.fft.fftshift(np.fft.fftshift(alpha_real, axes=0), axes=1)
-                        print(alpha_real.max())
-                        plt.imshow(alpha_real /alpha_real.max())
-
-                        a2 = np.divide(self.yf[i], self.fft2(k) + self.lambda_value)
-                        a2 = np.fft.fftshift(np.fft.fftshift(a2, axes=0), axes=1)
-                        plt.figure(2)
-                        a2_real = np.real(np.multiply(a2, np.conj(a2)))
-                        print(a2_real.max())
-                        plt.imshow(a2_real / a2_real.max())
+                if self.spatial_reg:
+                    salience_resize_f = self.fft2(resize((1-self.img_saliency_crop), k.shape))
+                    reg = np.multiply(salience_resize_f, np.conj(salience_resize_f))
+                    self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + reg * 1./(np.prod(reg.shape))))
+                    #self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + reg * self.lambda_value))
                 else:
                     self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + self.lambda_value))
+
             if self.sub_feature_type == 'dsst':
                 self.min_scale_factor = self.scale_step ** (np.ceil(np.log(max(5. / self.patch_size)) / np.log(self.scale_step)))
                 self.max_scale_factor = self.scale_step ** (np.log(min(np.array(self.im_sz[:2]).astype(float) / self.target_sz)) / np.log(self.scale_step))
@@ -399,11 +399,52 @@ class KCFTracker:
                 # we use linear kernel as in the BMVC2014 paper
                 self.sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
                 self.sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
+
+
+            ################ we plot the filters here:
+            if False:
+                from mpl_toolkits.mplot3d import Axes3D
+                plt.figure()
+                #filter = np.real(np.fft.ifft2(np.conj(self.alphaf[0])))
+                filter = np.real(np.fft.ifft2(self.alphaf[0]))
+                row_shift, col_shift = np.floor(np.array(filter.shape) / 2).astype(int)
+                filter = np.roll(np.roll(filter, row_shift, axis=0), col_shift, axis=1)
+                plt.imshow(filter)
+                plt.colorbar()
+
+                fig = plt.figure()
+                ax = Axes3D(fig)
+                X = np.arange(0, filter.shape[0])
+                Y = np.arange(0, filter.shape[1])
+                X, Y = np.meshgrid(X, Y)
+                ax.plot_surface(Y, X, filter.transpose(1,0), rstride=2, cstride=2, cmap='rainbow')
+                plt.show()
+
+                plt.figure()
+                plt.imshow(self.im_crop.transpose(1,2,0)/255.)
+
+                plt.figure()
+                salience_resize = resize(self.img_saliency_crop, filter.shape)
+                plt.imshow(salience_resize)
+
+                # plot the saliency regularisor map:
+                fig2 = plt.figure()
+                ax2 = Axes3D(fig2)
+                X = np.arange(0, salience_resize.shape[0])
+                Y = np.arange(0, salience_resize.shape[1])
+                X, Y = np.meshgrid(X, Y)
+                ax2.plot_surface(X, Y, (1-salience_resize.transpose(1,0)), rstride=2, cstride=2, cmap='rainbow')
+                plt.show()
+
+                plt.figure()
+                k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf[0], self.x[0])
+                plt.imshow(k)
+
         else:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
             self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
 
-    def detect(self, im, frame):
+    def detect(self, im, frame, img_saliency=None):
         """
         Note: we assume the target does not change in scale, hence there is no target size
         :param im: image should be of 3 dimension: M*N*C
@@ -424,6 +465,21 @@ class KCFTracker:
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         z = self.get_features()
         zf = self.fft2(z)
+
+        if img_saliency is not None and self.saliency_method == 2 and self.feature_type == 'multi_cnn':
+            self.feature_correlation = []
+            from skimage.transform import resize
+            img_saliency_crop = self.get_subwindow(img_saliency, self.pos, self.patch_size)
+            self.img_saliency_crop = img_saliency_crop.mean(axis=0) / 255.
+            for i in range(len(self.x)):
+                saliency_shape = z[i].shape[:2]
+                img_saliency = resize(self.img_saliency_crop, saliency_shape)
+                corr = np.multiply(z[i], img_saliency[:, :, None])
+                corr = np.sum(np.sum(corr, axis=0), axis=0)
+                # we compute the correlation of a filter within a layer to its features
+                self.feature_correlation.append((corr - corr.min()) / (corr.max() - corr.min()))
+                z[i] *= self.feature_correlation[-1]
+                zf[i] *= self.feature_correlation[-1]
 
         if not self.feature_type == 'multi_cnn':
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x, zf, z)
@@ -501,6 +557,21 @@ class KCFTracker:
         elif self.feature_type == 'multi_cnn':
             response_all = np.zeros(shape=(5, self.resize_size[0], self.resize_size[1]))
             self.max_list = [np.max(x) for x in self.response]
+            if self.sub_sub_feature_type == 'adapted_lr':
+                loss_idx = np.mod(frame, self.acc_time)
+                self.loss[loss_idx] = 1 - np.asarray(self.max_list)
+                self.loss_mean = np.mean(self.loss, axis=0)
+                self.loss_std = np.std(self.loss, axis=0)
+
+                if frame > self.acc_time:
+                    stability_coeff = np.abs(self.loss[loss_idx]-self.loss_mean) / self.loss_std
+                    self.stability = np.mean(np.exp(-stability_coeff))
+                    # stability value is small(0), object is stable, adaptive learning rate is increased to maximum
+                    # stability value is big(1), object is not stable, adaptive learning rate is decreased to minimum
+                    self.adaptation_rate = max(0, self.adaptation_rate_range[1] + \
+                                           self.stability*(self.adaptation_rate_range[0] - self.adaptation_rate_range[1]))
+                    self.adaptation_rate_scale = max(0, self.adaptation_rate_scale_range[1] + \
+                                                 self.stability*(self.adaptation_rate_scale_range[0] - self.adaptation_rate_scale_range[1]))
 
             for i in range(len(self.response)):
                 response_all[i, :, :] = imresize(self.response[i], size=self.resize_size)
@@ -582,72 +653,35 @@ class KCFTracker:
         x_new = self.get_features()
         xf_new = self.fft2(x_new)
 
+        if img_saliency is not None and self.saliency_method == 2 and self.feature_type == 'multi_cnn':
+            for i in range(len(x_new)):
+                x_new[i] *= self.feature_correlation[i]
+                xf_new[i] *= self.feature_correlation[i]
+
         if self.feature_type == 'multi_cnn':
-            # we follow the paper for Hedged Deep tracking for updating the learning rate
-            self.max_list = [np.max(x) for x in self.response]
-            self.response_max_list = []
-            for rm in self.response:
-                row, col = rm.shape
-                row_max = max(0, min((1./2 + predicted_output[0][0]) * row, row-1))
-                col_max = max(0, min((1./2 + predicted_output[0][1]) * col, col-1))
-                self.response_max_list.append(rm[int(row_max), int(col_max)])
+            for i in range(len(x_new)):
+                k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new[i], x_new[i])
+                kf = self.fft2(k)
 
-            if self.sub_sub_feature_type == 'adapted_lr_hdt':
-                loss_idx = np.mod(frame, self.acc_time)
-                self.loss[loss_idx] = np.asarray(self.max_list) - np.asarray(self.response_max_list)
-                self.loss_mean = np.mean(self.loss, axis=0)
-                self.loss_std = np.std(self.loss, axis=0)
-
-                if frame > self.acc_time:
-                    self.stability = np.abs(self.loss[loss_idx]-self.loss_mean) / (self.loss_std + np.finfo(np.float32).eps)
-                    # stability value is small(0), object is stable, adaptive learning rate is increased to maximum
-                    # stability value is big(1), object is not stable, adaptive learning rate is decreased to minimum
-                    self.adaptation_rate = self.stability*(self.adaptation_rate_range[0] - self.adaptation_rate_range[1])
-                    self.adaptation_rate_scale = self.stability.mean()*(self.adaptation_rate_scale_range[0] - self.adaptation_rate_scale_range[1])
-
-                for i in range(len(x_new)):
-                    k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new[i], x_new[i])
-                    if self.reg_method:
-                        reg_map = self.fft2(1 - self.y[i] + self.reg_min)
-                        reg_map = np.fft.fftshift(np.fft.fftshift(reg_map, axes=0), axes=1)
-                        reg = np.multiply(reg_map, np.conj(reg_map))
-                        alphaf_new = np.divide(self.yf[i], self.fft2(k) + reg * self.reg_mul)
-                        self.alphaf.append(alphaf_new)
-                        if False:
-                            plt.figure(1)
-                            alpha_real = np.real(np.multiply(alphaf_new, np.conj(alphaf_new)))
-                            alpha_real = np.fft.fftshift(np.fft.fftshift(alpha_real, axes=0), axes=1)
-                            print(alpha_real.max())
-                            plt.imshow(alpha_real / alpha_real.max())
-
-                            a2 = np.divide(self.yf[i], self.fft2(k) + self.lambda_value)
-                            a2 = np.fft.fftshift(np.fft.fftshift(a2, axes=0), axes=1)
-                            plt.figure(2)
-                            a2_real = np.real(np.multiply(a2, np.conj(a2)))
-                            print(a2_real.max())
-                            plt.imshow(a2_real / a2_real.max())
-                    else:
-                        alphaf_new = np.divide(self.yf[i], self.fft2(k) + self.lambda_value)
-                    self.x[i] = (1 - self.adaptation_rate[i]) * self.x[i] + self.adaptation_rate[i] * x_new[i]
-                    self.xf[i] = (1 - self.adaptation_rate[i]) * self.xf[i] + self.adaptation_rate[i] * xf_new[i]
-                    self.alphaf[i] = (1 - self.adaptation_rate[i]) * self.alphaf[i] + self.adaptation_rate[i] * alphaf_new
-
-            else:
-                for i in range(len(x_new)):
-                    k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new[i], x_new[i])
-                    kf = self.fft2(k)
+                if self.spatial_reg and img_saliency is not None and self.saliency_method == 2 and self.spatial_reg:
+                    from skimage.transform import resize
+                    salience_resize_f = self.fft2(resize((1-self.img_saliency_crop), k.shape))
+                    reg = np.multiply(salience_resize_f, np.conj(salience_resize_f))
+                    alphaf_new = np.divide(self.yf[i], kf + reg * 1./(np.prod(reg.shape)))
+                else:
                     alphaf_new = np.divide(self.yf[i], kf + self.lambda_value)
-                    self.x[i] = (1 - self.adaptation_rate) * self.x[i] + self.adaptation_rate * x_new[i]
-                    self.xf[i] = (1 - self.adaptation_rate) * self.xf[i] + self.adaptation_rate * xf_new[i]
-                    self.alphaf[i] = (1 - self.adaptation_rate) * self.alphaf[i] + self.adaptation_rate * alphaf_new
+                self.x[i] = (1 - self.adaptation_rate) * self.x[i] + self.adaptation_rate * x_new[i]
+                self.xf[i] = (1 - self.adaptation_rate) * self.xf[i] + self.adaptation_rate * xf_new[i]
+                self.alphaf[i] = (1 - self.adaptation_rate) * self.alphaf[i] + self.adaptation_rate * alphaf_new
             if self.sub_feature_type == 'dsst':
                 self.xs = self.get_scale_sample(im, self.currentScaleFactor * self.scaleFactors)
                 self.xsf = np.fft.fftn(self.xs, axes=[0])
                 # we use linear kernel as in the BMVC2014 paper
                 new_sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
                 new_sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
-                self.sf_num = (1 - self.adaptation_rate_scale) * self.sf_num + self.adaptation_rate_scale * new_sf_num
-                self.sf_den = (1 - self.adaptation_rate_scale) * self.sf_den + self.adaptation_rate_scale * new_sf_den
+                self.sf_num = (1 - self.adaptation_rate_scale) * self.sf_num + self.adaptation_rate * new_sf_num
+                self.sf_den = (1 - self.adaptation_rate_scale) * self.sf_den + self.adaptation_rate * new_sf_den
+
         else:
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new, x_new)
             kf = self.fft2(k)
@@ -824,13 +858,12 @@ class KCFTracker:
             for i, features in enumerate(features_list):
                 features = np.squeeze(features)
                 features = (features.transpose(1, 2, 0) - features.min()) / (features.max() - features.min())
+                if self.saliency_method==1 and self.feature_correlation is not None:
+                    features = np.multiply(features, self.feature_correlation[i][None, None, :])
                 features_list[i] = np.multiply(features, self.cos_window[i][:, :, None])
             return features_list
         else:
             assert 'Non implemented!'
-
-        if not (self.sub_feature_type=="" or self.feature_correlation is None):
-            features = np.multiply(features, self.feature_correlation[None, None, :])
 
         return features
 

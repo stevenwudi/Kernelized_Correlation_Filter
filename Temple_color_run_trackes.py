@@ -3,8 +3,8 @@ author: DI WU
 stevenwudi@gmail.com
 """
 from __future__ import print_function
-from scripts import UAV_script
-#from KCFpy_debug import KCFTracker
+from scripts import Temple_color_script, UAV_script
+from KCFpy_debug import KCFTracker
 import os
 import numpy as np
 import time
@@ -13,40 +13,27 @@ from scripts.model.result import Result
 
 
 # some global variables here
-OVERWRITE_RESULT = False
-SETUP_SEQ = True
+OVERWRITE_RESULT = True
+SETUP_SEQ = False
 SAVE_RESULT = True
-SRC_DIR = '/home/stevenwudi/Documents/Python_Project/UAV/UAV123/'
-RESULT_SRC = './results_UAV123/{0}/'  # '{0} : OPE, SRE, TRE'
-EVAL_SEQ = 'UAV123'
-IMG_DIR = os.path.join(SRC_DIR, 'data_seq', EVAL_SEQ)
-ANNO_DIR = os.path.join(SRC_DIR, 'anno', EVAL_SEQ)
-
-
-class Tracker:
-    def __init__(self, name=''):
-        self.name=name
+SRC_DIR = '/home/stevenwudi/Documents/Python_Project/Temple-color-128/Temple-color-128'
+RESULT_SRC = './results_temple_color/{0}/'  # '{0} : OPE, SRE, TRE'
 
 
 def main():
-    # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-    #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-    #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-    #                        name_suffix='_best_valid_CNN')
-    trackers = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
-    # evalTypes = ['OPE', 'SRE', 'TRE']
+    tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+                           sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                           name_suffix='_best_valid_CNN')
     evalTypes = ['OPE']
-    loadSeqs = 'UAV123'
-
     if SETUP_SEQ:
         print('Setup sequences ...')
-        UAV_script.setup_seqs(loadSeqs, SRC_DIR,  ANNO_DIR, IMG_DIR)
+        Temple_color_script.setup_seqs(SRC_DIR)
 
-    print('Starting benchmark for trackers: {0}, evalTypes : {1}'.format(tracker.name, evalTypes))
+    print('Starting benchmark for trackers: {0}'.format(tracker.name))
     for evalType in evalTypes:
-        seqNames = UAV_script.get_seq_names(loadSeqs, ANNO_DIR)
-        seqs = UAV_script.load_seq_configs(seqNames, ANNO_DIR)
-        #seqs = seqs[:40]
+        seqNames = Temple_color_script.get_seq_names(SRC_DIR)
+        seqs = Temple_color_script.load_seq_configs(seqNames, SRC_DIR)
         ######################################################################
         results = run_trackers(tracker, seqs, evalType)
         ######################################################################
