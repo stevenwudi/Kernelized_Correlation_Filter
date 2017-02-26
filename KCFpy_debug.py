@@ -589,7 +589,7 @@ class KCFTracker:
                 row, col = rm.shape
                 row_max = max(0, min((1./2 + predicted_output[0][0]) * row, row-1))
                 col_max = max(0, min((1./2 + predicted_output[0][1]) * col, col-1))
-                self.response_max_list.append(rm[row_max, col_max])
+                self.response_max_list.append(rm[int(row_max), int(col_max)])
 
             if self.sub_sub_feature_type == 'adapted_lr_hdt':
                 loss_idx = np.mod(frame, self.acc_time)
@@ -626,7 +626,7 @@ class KCFTracker:
                             print(a2_real.max())
                             plt.imshow(a2_real / a2_real.max())
                     else:
-                        self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + self.lambda_value))
+                        alphaf_new = np.divide(self.yf[i], self.fft2(k) + self.lambda_value)
                     self.x[i] = (1 - self.adaptation_rate[i]) * self.x[i] + self.adaptation_rate[i] * x_new[i]
                     self.xf[i] = (1 - self.adaptation_rate[i]) * self.xf[i] + self.adaptation_rate[i] * xf_new[i]
                     self.alphaf[i] = (1 - self.adaptation_rate[i]) * self.alphaf[i] + self.adaptation_rate[i] * alphaf_new

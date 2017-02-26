@@ -13,7 +13,7 @@ from config import *
 from scripts import *
 
 from KCFpy_debug import KCFTracker
-OVERWRITE_RESULT = False
+OVERWRITE_RESULT = True
 
 
 def main(argv):
@@ -93,7 +93,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(0, numSeq):
+    for idxSeq in range(0, 50):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 
