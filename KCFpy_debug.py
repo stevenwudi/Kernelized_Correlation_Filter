@@ -14,14 +14,18 @@ class KCFTracker:
                  debug=False, gt_type='rect', load_model=False, vgglayer='',
                  model_path='./trained_models/CNN_Model_OBT100_multi_cnn_final.h5',
                  cnn_maximum=False, name_suffix="", feature_bandwidth_sigma=0.2,
-                 adaptation_rate_range_max=0.0025,
+                 adaptation_rate_range_max=0.002,
                  adaptation_rate_scale_range_max=0.005,
                  padding=2.2,
                  lambda_value=1e-4,
                  acc_time=5,
                  reg_method=0,
                  reg_min=0.1,
-                 reg_mul=1e-3):
+                 reg_mul=1e-3,
+                 saliency="",
+                 cross_correlation=0,
+                 saliency_percent=1,
+                 grabcut_mask_path='./figures/grabcut_masks/'):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -61,6 +65,10 @@ class KCFTracker:
         self.first_target_sz = []
         self.currentScaleFactor = 1
         self.load_model = load_model
+        self.saliency = saliency
+        self.cross_correlation = cross_correlation
+        self.saliency_percent = saliency_percent
+        self.grabcut_mask_path = grabcut_mask_path
 
         # following is set according to Table 2:
         if self.feature_type == 'raw':
@@ -122,8 +130,6 @@ class KCFTracker:
 
             self.feature_bandwidth_sigma = 1
             self.adaptation_rate = 0.01
-            if self.sub_feature_type == 'grabcut':
-                self.grabcut_mask_path = './figures/grabcut_masks/'
         elif self.feature_type == 'vgg_rnn':
             from keras.applications.vgg19 import VGG19
             from keras.models import Model
@@ -293,6 +299,12 @@ class KCFTracker:
         self.reg_min = reg_min
         self.reg_mul = reg_mul
         self.name += name_suffix
+        if self.saliency:
+            self.name += '_' + self.saliency
+        if self.cross_correlation > 0:
+            self.name += '_xcorr' + str(self.cross_correlation)
+        elif self.saliency_percent < 1:
+            self.name += '_' + str(self.saliency_percent)
 
     def train(self, im, init_rect, seqname):
         """
@@ -354,7 +366,7 @@ class KCFTracker:
             self.im_sz = im.shape[1:]
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         self.x = self.get_features()
-        self.xf = self.fft2(self.x)
+        self.xf = []
         if self.sub_feature_type == 'grabcut':
             import matplotlib.image as mpimg
             from skimage.transform import resize
@@ -368,13 +380,69 @@ class KCFTracker:
         if self.feature_type == 'multi_cnn':
             # multi_cnn will render the models to be of a list
             self.alphaf = []
-            for i in range(len(self.x)):
-                k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf[i], self.x[i])
+            if self.saliency == 'grabcut':
+                self.feature_correlation = []
+                self.feature_correlation_alpha = []
+                self.feature_correlation_ranked_idx = []
+                #### Note for filters especially for higher level features, there could be zero response
+                # which means that those features are totally irrelavant here but will have high STD
+                # we need to get rid of them!!!!!!!!!!!!!!!!!
+                self.feature_valid_idx = []
+            for l in range(len(self.x)):
+                if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+                    import matplotlib.image as mpimg
+                    from skimage.transform import resize
+                    self.img_grabcut = mpimg.imread(self.grabcut_mask_path + seqname + ".png")
+                    ### we find the correlation here
+                    grabcut_shape = self.x[l].shape[:2]
+                    img_grabcut_resized = resize(self.img_grabcut, grabcut_shape)
+                    t = img_grabcut_resized
+                    t_mean = t.mean()
+                    t_std = t.std()
+                    N = np.prod(t.shape)
+                    corr_list_my = np.zeros(shape=(self.x[l].shape[2]))
+                    for filter_num in range(self.x[l].shape[2]):
+                        f = self.x[l][:,:,filter_num]
+                        corr_list_my[filter_num] = np.multiply((f-f.mean()) / f.std(), (t-t_mean)/t_std).sum() / N
+
+                    filters = self.x[l].transpose(2,0,1)
+                    #### Note for filters especially for higher level features, there could be zero response
+                    # which means that those features are totally irrelavant here but will have high STD
+                    # we need to get rid of them!!!!!!!!!!!!!!!!!
+                    filter_std = filters.std(axis=1).std(axis=1)
+                    valid_idx = filter_std != 0
+                    print('layer %d, valid feature number: %d of %d'%(l, valid_idx.sum(), filters.shape[0]))
+                    alpha = np.asarray([0.5 * np.log((1 - e) / e) for e in
+                                        np.clip((1 - corr_list_my[valid_idx]), 10e-5, 1 - 10e-5)])
+                    self.feature_valid_idx.append(valid_idx)
+                    self.feature_correlation.append(corr_list_my[valid_idx])
+                    self.feature_correlation_alpha.append(alpha)
+                    self.feature_correlation_ranked_idx.append(np.argsort(corr_list_my[valid_idx]))
+                    if False:
+                        from visualisation_utils import make_mosaic
+                        idx = np.argsort(self.feature_correlation[-1])
+                        plt.figure(9); plt.imshow(t)
+                        plt.figure(10);plt.imshow(make_mosaic(filters[valid_idx][idx[:9]], 3, 3, border=3))
+                        plt.figure(11);plt.imshow(make_mosaic(filters[valid_idx][idx[-9:]], 3, 3, border=3))
+                        plt.waitforbuttonpress(0)
+
+                    self.x[l] = self.x[l][:, :, self.feature_valid_idx[l]]
+                    if self.cross_correlation > 0:
+                        chosen_number = np.sum(self.feature_correlation[l]>self.cross_correlation)
+                        print('layer %d, xcoor: %d of %d' % (l, chosen_number, filters.shape[0]))
+                        self.x[l] = self.x[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                    elif self.saliency_percent < 1.0:
+                        chosen_number = int(self.saliency_percent * len(self.feature_correlation_ranked_idx[l]))
+                        self.x[l] = self.x[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                    else:
+                        self.x[l] *= self.feature_correlation[l][None, None, :]
+                self.xf.append(self.fft2(self.x[l]))
+                k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf[l], self.x[l])
                 if self.reg_method:
-                    reg_map = self.fft2(1-self.y[i] + self.reg_min)
+                    reg_map = self.fft2(1-self.y[l] + self.reg_min)
                     reg_map = np.fft.fftshift(np.fft.fftshift(reg_map, axes=0), axes=1)
                     reg = np.multiply(reg_map, np.conj(reg_map))
-                    alphaf_new = np.divide(self.yf[i], self.fft2(k) + reg * self.reg_mul)
+                    alphaf_new = np.divide(self.yf[l], self.fft2(k) + reg * self.reg_mul)
                     self.alphaf.append(alphaf_new)
                     if False:
                         plt.figure(1)
@@ -390,7 +458,7 @@ class KCFTracker:
                         print(a2_real.max())
                         plt.imshow(a2_real / a2_real.max())
                 else:
-                    self.alphaf.append(np.divide(self.yf[i], self.fft2(k) + self.lambda_value))
+                    self.alphaf.append(np.divide(self.yf[l], self.fft2(k) + self.lambda_value))
             if self.sub_feature_type == 'dsst':
                 self.min_scale_factor = self.scale_step ** (np.ceil(np.log(max(5. / self.patch_size)) / np.log(self.scale_step)))
                 self.max_scale_factor = self.scale_step ** (np.log(min(np.array(self.im_sz[:2]).astype(float) / self.target_sz)) / np.log(self.scale_step))
@@ -400,6 +468,7 @@ class KCFTracker:
                 self.sf_num = np.multiply(self.ysf[:, None], np.conj(self.xsf))
                 self.sf_den = np.real(np.sum(np.multiply(self.xsf, np.conj(self.xsf)), axis=1))
         else:
+            self.xf = self.fft2(self.x)
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, self.xf, self.x)
             self.alphaf = np.divide(self.yf, self.fft2(k) + self.lambda_value)
 
@@ -417,12 +486,23 @@ class KCFTracker:
             im = im.transpose(1, 2, 0) / 255.
             self.im_sz = im.shape
 
-        # Qutoe from BMVC2014paper: Danelljan:
+        # Quote from BMVC2014paper: Danelljan:
         # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
         # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
         # filter hs is applied at the new target location.
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         z = self.get_features()
+        if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+            for l in range(len(z)):
+                z[l] = z[l][:, :, self.feature_valid_idx[l]]
+                if self.cross_correlation > 0:
+                    chosen_number = np.sum(self.feature_correlation[l] > self.cross_correlation)
+                    z[l] = z[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                elif self.saliency_percent < 1.0:
+                    chosen_number = int(self.saliency_percent * len(self.feature_correlation_ranked_idx[l]))
+                    z[l] = z[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                else:
+                    z[l] *= self.feature_correlation[l][None, None, :]
         zf = self.fft2(z)
 
         if not self.feature_type == 'multi_cnn':
@@ -580,9 +660,20 @@ class KCFTracker:
         # we update the model from here
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         x_new = self.get_features()
-        xf_new = self.fft2(x_new)
-
         if self.feature_type == 'multi_cnn':
+            if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+                for l in range(len(x_new)):
+                    x_new[l] = x_new[l][:, :, self.feature_valid_idx[l]]
+                    if self.cross_correlation > 0:
+                        chosen_number = np.sum(self.feature_correlation[l]>self.cross_correlation)
+                        x_new[l] = x_new[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                    elif self.saliency_percent < 1.0:
+                        chosen_number = int(self.saliency_percent * len(self.feature_correlation_ranked_idx[l]))
+                        x_new[l] = x_new[l][:, :, self.feature_correlation_ranked_idx[l][-chosen_number:][::-1]]
+                    else:
+                        x_new[l] *= self.feature_correlation[l][None, None, :]
+            xf_new = self.fft2(x_new)
+
             # we follow the paper for Hedged Deep tracking for updating the learning rate
             self.max_list = [np.max(x) for x in self.response]
             self.response_max_list = []
@@ -649,6 +740,7 @@ class KCFTracker:
                 self.sf_num = (1 - self.adaptation_rate_scale) * self.sf_num + self.adaptation_rate_scale * new_sf_num
                 self.sf_den = (1 - self.adaptation_rate_scale) * self.sf_den + self.adaptation_rate_scale * new_sf_den
         else:
+            xf_new = self.fft2(x_new)
             k = self.dense_gauss_kernel(self.feature_bandwidth_sigma, xf_new, x_new)
             kf = self.fft2(k)
             alphaf_new = np.divide(self.yf, kf + self.lambda_value)
@@ -840,7 +932,12 @@ class KCFTracker:
         for i, s in enumerate(scaleFactors):
             patch_sz = np.floor(self.first_target_sz * s)
             im_patch = self.get_subwindow(im, self.pos, patch_sz)  # extract image
-            im_patch_resized = imresize(im_patch, self.first_target_sz)  #resize image to model size
+            # because the hog output is (dim/4)-2>1:
+            if self.first_target_sz.min()<12:
+                scale_up_factor = 12. / np.min(self.first_target_sz)
+                im_patch_resized = imresize(im_patch, np.asarray(self.first_target_sz * scale_up_factor).astype('int'))
+            else:
+                im_patch_resized = imresize(im_patch, self.first_target_sz)  #resize image to model size
             features_hog = pyhog.features_pedro(im_patch_resized.astype(np.float64)/255.0, 4)
             resized_im_array.append(np.multiply(features_hog.flatten(), self.scale_window[i]))
 

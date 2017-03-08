@@ -1,30 +1,31 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from config import *
+
 from scripts import *
-RESULT_SRC = './results_{0}/{1}/' # '{0} : OPE, SRE, TRE'
+
+RESULT_SRC = './results_temple_color/{0}/' # '{0} : OPE, SRE, TRE'
+
 
 def main():
     evalTypes = ['OPE']
-    testname = 'tb100'
+    testname = 'Temple_color'
     for i in range(len(evalTypes)):
         evalType = evalTypes[i]
-        result_src = RESULT_SRC.format(testname.upper(), evalType)
+        result_src = RESULT_SRC.format(evalType)
         trackers = os.listdir(result_src)
         scoreList = []
         for t in trackers:
-            score = butil.load_scores(evalType, t, testname)
+            score = butil.load_scores(evalType, t, testname, RESULT_SRC)
             scoreList.append(score)
         plot_graph_success(scoreList, i*2, evalType, testname)
         plot_graph_precision(scoreList, i*2+1, evalType, testname)
     plt.show()
+    plt.waitforbuttonpress(0)
 
 
 def plot_graph_success(scoreList, fignum, evalType, testname):
     plt.figure(num=fignum, figsize=(9, 6), dpi=70)
-    figManager = plt.get_current_fig_manager()
-    figManager.window.showMaximized()
     rankList = sorted(scoreList,  key=lambda o: sum(o[0].successRateList), reverse=True)
     for i in range(len(rankList)):
         result = rankList[i]
@@ -63,7 +64,7 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
                         c = LINE_COLORS[i], label='{0} [{1:.3f}]'.format(tracker, ave), lw=2.0, ls=ls)
 
             else:
-                plt.plot(thresholdSetOverlap, attr.successRateList, 
+                plt.plot(thresholdSetOverlap, attr.successRateList,
                     label='', alpha=0.5, c='#202020', ls='--')
         else:
             print('err')
@@ -80,8 +81,6 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
 def plot_graph_precision(scoreList, fignum, evalType, testname):
 
     plt.figure(num=fignum, figsize=(9, 6), dpi=70)
-    figManager = plt.get_current_fig_manager()
-    figManager.window.showMaximized()
     # some don't have precison list--> we will delete them?
     for t in scoreList:
         if len(t[0].precisionRateList)<20:

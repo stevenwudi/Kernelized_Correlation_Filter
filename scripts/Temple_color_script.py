@@ -112,7 +112,7 @@ def load_seq_configs(seqNames, SRC_DIR):
 
 
 def load_seq_config(seqName, SRC_DIR):
-    src = os.path.join('/'.join(['/'.join(SRC_DIR.split('/')[:-1]), 'cfg_json']), seqName+"_cfg.json")
+    src = os.path.join('/'.join(['/'.join(SRC_DIR.split('/')[:-2]), 'cfg_json']), seqName+"_cfg.json")
     configFile = open(src)
     string = configFile.read()
     j = json.loads(string)

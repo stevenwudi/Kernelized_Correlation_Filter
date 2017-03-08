@@ -22,9 +22,10 @@ class Tracker:
 
 
 def main(argv):
-    trackers = [Tracker(name='DSST')]
+    #trackers = [Tracker(name='DSST')]
     trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')]
-    trackers = [Tracker(name='HDT_cvpr2016')]
+    #trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_hdtadl_0.002')]
+    #trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_grabcut_xcorr0.5')]
 
     evalTypes = ['OPE']
     loadSeqs = 'TB100'
@@ -98,7 +99,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(1, numSeq):
+    for idxSeq in range(53, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 
@@ -113,7 +114,6 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
                     seqResults = butil.load_seq_result(evalType, t, s.name)
                     trackerResults[t].append(seqResults)
                     continue
-            seqResults = []
             seqLen = len(subSeqs)
             for idx in range(seqLen):
                 subS = subSeqs[idx]
@@ -159,7 +159,7 @@ def run_KCF_variant(tracker, seq, r_temp, debug=False):
             print("pos", np.array(result['res'][frame-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_result(frame + seq.startFrame, img_rgb, result, seq.gtRect, wait_second=0.01)
+            plot_tracking_result(frame + seq.startFrame, img_rgb, result, seq.gtRect, r_temp.seqName, wait_second=0.1)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time

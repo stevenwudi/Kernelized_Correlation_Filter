@@ -18,9 +18,9 @@ OVERWRITE_RESULT = True
 
 def main(argv):
     trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
+                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
                            model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                           acc_time=5)]
+                           saliency='grabcut', cross_correlation=0.5)]
 
                            # reg_method=1,
                            # reg_min=0,
@@ -57,7 +57,7 @@ def main(argv):
         butil.setup_seqs(loadSeqs)
 
     print('Starting benchmark for {0} trackers, evalTypes : {1}'.format(
-        len(trackers), evalTypes))
+        trackers[0].name, evalTypes))
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
@@ -174,7 +174,7 @@ def run_KCF_variant(tracker, seq, debug=False):
             print("pos", np.array(tracker.res[-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
+            plot_tracking_rect(seq.name, frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time

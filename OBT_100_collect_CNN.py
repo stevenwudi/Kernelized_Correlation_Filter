@@ -69,7 +69,7 @@ def run_trackers(trackers, seqs, evalType):
     ##################################################
     # we also collect data fro training here
     import h5py
-    f = h5py.File("./data/OBT100_new_multi_cnn%d.hdf5", "w", driver="family", memb_size=2**32-1)
+    f = h5py.File("./data/OBT100_hdt_multi_cnn%d.hdf5", "w", driver="family", memb_size=2**32-1)
     X_train = f.create_dataset("x_train", (80000, 5, 240, 160), dtype='uint8', chunks=True)
     y_train = f.create_dataset("y_train", (80000, 4), dtype='float', chunks=True)
     count = 0

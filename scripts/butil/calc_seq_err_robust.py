@@ -11,7 +11,9 @@ def calc_seq_err_robust(results, rect_anno):
     # print "%d %d" % (seq_length, len(rect_anno))
     resultType = results.resType
     if resultType == 'rect':
-        rectMat = res
+        # get rid of zeros
+        import numpy as np
+        rectMat = [np.clip(x, 1, 10e5) for x in res]
     elif resultType == 'ivtAff' or resultType == 'affine_ivt':
         for i in range(seq_length):
             # rect, c, corn = scripts.butil.calc_rect_center(results['tmplsize'], res[i])

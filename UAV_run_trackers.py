@@ -4,7 +4,7 @@ stevenwudi@gmail.com
 """
 from __future__ import print_function
 from scripts import UAV_script
-#from KCFpy_debug import KCFTracker
+
 import os
 import numpy as np
 import time
@@ -13,27 +13,31 @@ from scripts.model.result import Result
 
 
 # some global variables here
-OVERWRITE_RESULT = False
-SETUP_SEQ = True
 SAVE_RESULT = True
 SRC_DIR = '/home/stevenwudi/Documents/Python_Project/UAV/UAV123/'
 RESULT_SRC = './results_UAV123/{0}/'  # '{0} : OPE, SRE, TRE'
 EVAL_SEQ = 'UAV123'
 IMG_DIR = os.path.join(SRC_DIR, 'data_seq', EVAL_SEQ)
 ANNO_DIR = os.path.join(SRC_DIR, 'anno', EVAL_SEQ)
+SETUP_SEQ = False
+OVERWRITE_RESULT = False
 
-
-class Tracker:
-    def __init__(self, name=''):
-        self.name=name
+if OVERWRITE_RESULT:
+    from KCFpy_debug import KCFTracker
+else:
+    class Tracker:
+        def __init__(self, name=''):
+            self.name=name
 
 
 def main():
-    # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-    #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-    #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-    #                        name_suffix='_best_valid_CNN')
-    trackers = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
+    if OVERWRITE_RESULT:
+        tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+                               sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+                               model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                               name_suffix='_best_valid_CNN')
+    else:
+        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'
@@ -91,8 +95,10 @@ def run_trackers(tracker, seqs, evalType):
                 seqResults.append(r)
                 continue
         ####################
+        # we only rerun tracker with target size small than a threshold:
+        #if np.min(subS.gtRect[0])<12 and not(subS.name == u'boat8'):
         tracker, res = run_KCF_variant(tracker, subS, debug=False)
-        ####################
+
         r = Result(tracker.name, subS.name, subS.startFrame, subS.endFrame,
                    res['type'], evalType, res['res'], res['fps'], None)
         r.refresh_dict()
@@ -128,7 +134,7 @@ def run_KCF_variant(tracker, seq, debug=False):
             print("pos", np.array(tracker.res[-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
+            plot_tracking_rect(seq.name, frame, img_rgb, tracker, seq.gtRect)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time

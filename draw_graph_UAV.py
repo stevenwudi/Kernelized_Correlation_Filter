@@ -3,8 +3,10 @@ import numpy as np
 import math
 
 from scripts import *
-
-RESULT_SRC = './results_UAV123/{0}/' # '{0} : OPE, SRE, TRE'
+if False:
+    RESULT_SRC = './results_UAV123/{0}/'  # '{0} : OPE, SRE, TRE'
+else:
+    RESULT_SRC = './results_UAV_10fps/{0}/' # '{0} : OPE, SRE, TRE'
 
 def main():
     evalTypes = ['OPE']
@@ -15,11 +17,10 @@ def main():
         trackers = os.listdir(result_src)
         scoreList = []
         for t in trackers:
-            score = butil.load_scores(evalType, t, testname)
+            score = butil.load_scores(evalType, t, testname, RESULT_SRC)
             scoreList.append(score)
         plot_graph_success(scoreList, i*2, evalType, testname)
         plot_graph_precision(scoreList, i*2+1, evalType, testname)
-    plt.show()
     plt.waitforbuttonpress(0)
 
 
@@ -39,28 +40,28 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
                 if type(tracker) == dict:
                     if tracker['name'] == 'DSST':
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
+                                 c=LINE_COLORS[i], label='{0} [{1:.3f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
                     elif tracker['name'] == 'MEEM':
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('MEEM_ECCV14', ave), lw=2.0,
+                                 c=LINE_COLORS[i], label='{0} [{1:.3f}]'.format('MEEM_ECCV14', ave), lw=2.0,
                                  ls=ls)
                     elif tracker['name'] == 'MUSTer':
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
+                                 c=LINE_COLORS[i], label='{0} [{1:.3f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
                     elif tracker['name'][:3] =='HDT':
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                            c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls = ls)
+                            c = LINE_COLORS[i], label='{0} [{1:.3f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls = ls)
                     elif tracker['name'] == 'KCFraw_colour':
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                                 c=LINE_COLORS[i], label='{0} [{1:.2f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0,
+                                 c=LINE_COLORS[i], label='{0} [{1:.3f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0,
                                  ls=ls)
                     # Wudi's modification:
                     else:
                         plt.plot(thresholdSetOverlap, attr.successRateList,
-                            c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
+                            c = LINE_COLORS[i], label='{0} [{1:.3f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
                 else:
                     plt.plot(thresholdSetOverlap, attr.successRateList,
-                        c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker, ave), lw=2.0, ls=ls)
+                        c = LINE_COLORS[i], label='{0} [{1:.3f}]'.format(tracker, ave), lw=2.0, ls=ls)
 
             else:
                 plt.plot(thresholdSetOverlap, attr.successRateList,
@@ -103,22 +104,22 @@ def plot_graph_precision(scoreList, fignum, evalType, testname):
                     # Wudi's modification:
                     if tracker['name']=='DSST':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
+                                 label='{0} [{1:.3f}]'.format('DSST_BMVC_2014_tPAMI17', ave), lw=2.0, ls=ls)
                     elif tracker['name'] == 'MEEM':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format('MEEM_ECCV14', ave), lw=2.0, ls=ls)
+                                 label='{0} [{1:.3f}]'.format('MEEM_ECCV14', ave), lw=2.0, ls=ls)
                     elif tracker['name'] == 'MUSTer':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
+                                 label='{0} [{1:.3f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
                     elif tracker['name'][:3] == 'HDT':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls=ls)
+                                 label='{0} [{1:.3f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls=ls)
                     elif tracker['name'] == 'KCFraw_colour':
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
-                             label='{0} [{1:.2f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0, ls=ls)
+                             label='{0} [{1:.3f}]'.format('KCF_ECCV12_tPAMI15', ave), lw=2.0, ls=ls)
                     else:
                         plt.plot(thresholdSetError, attr.precisionRateList,c = LINE_COLORS[i],
-                                 label='{0} [{1:.2f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
+                                 label='{0} [{1:.3f}]'.format(tracker['name'], ave), lw=2.0, ls = ls)
                 elif tracker == "HDT_cvpr2016" or tracker =='KCFvgg_rnn' or tracker[:3] =='KCF':
                     plt.plot(thresholdSetError, attr.precisionRateList,
                         c = LINE_COLORS[i], label='{0} [{1:.2f}]'.format(tracker, ave), lw=2.0, ls=ls)

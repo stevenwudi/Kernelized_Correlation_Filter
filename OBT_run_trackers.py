@@ -12,20 +12,27 @@ import sys
 from config import *
 from scripts import *
 
-from KCFpy_debug import KCFTracker
 OVERWRITE_RESULT = True
+
+class Tracker:
+    def __init__(self, name=''):
+        self.name=name
+
+if OVERWRITE_RESULT:
+    from KCFpy_debug import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
-                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                           adaptation_rate_range_max=0.005,
-                           adaptation_rate_scale_range_max=0.01,
-                           name_suffix='_adl_0.005'
-                           )]
+    if OVERWRITE_RESULT:
+        trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+                               sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+                               model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                               saliency='grabcut', saliency_percent=0.5)]
+
+    else:
+        trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')]
     evalTypes = ['OPE']
-    loadSeqs = 'TB100'
+    loadSeqs = 'TB50'
     try:
         opts, args = getopt.getopt(argv, "ht:e:s:", ["tracker=", "evaltype=", "sequence="])
     except getopt.GetoptError:

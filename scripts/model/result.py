@@ -10,8 +10,8 @@ class Result:
     # resType : result type
     # fps
 
-    def __init__(self, tracker, seqName, startFrame, endFrame, 
-        resType, evalType, res, fps, shiftType=None, tmplsize=None):
+    def __init__(self, tracker, seqName, startFrame=0, endFrame=0,
+        resType='rect', evalType='OPE', res=[], fps=0, shiftType=None, tmplsize=None):
         self.tracker = tracker
         self.seqName = seqName
         self.startFrame = startFrame

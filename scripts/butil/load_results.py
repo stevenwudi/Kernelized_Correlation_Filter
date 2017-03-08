@@ -119,14 +119,16 @@ def load_all_scores(evalType, testname):
     attrList = [(t, load_scores(evalType, t, testname)) for t in trackers]
     return attrList
 
-def load_scores(evalType, tracker, testname):
+def load_scores(evalType, tracker, testname, RESULT_SRC):
     resultSRC = RESULT_SRC.format(evalType)
     print 'Loading \'{0}\'...'.format(tracker)
     if tracker[:3] == 'KCF' or tracker[:4] == 'DSST' or tracker[:4]=='MEEM'\
-            or tracker[:4]=='MUST' or tracker[:3]=='HDT':
+            or tracker[:4]=='MUST' or tracker[:3]=='HDT' or testname=='UAV123':
         src = os.path.join(resultSRC, tracker + '/scores')
     else:
         src = os.path.join(resultSRC, tracker + '/scores_{0}'.format(testname))
+        if not os.path.exists(src):
+            src = os.path.join(resultSRC, tracker + '/scores')
     attrNames = os.listdir(src)
     attrs = []
     for attrName in attrNames:
