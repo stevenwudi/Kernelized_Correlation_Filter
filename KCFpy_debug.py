@@ -7,6 +7,7 @@ modified by Di Wu
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imresize
+import cv2
 
 
 class KCFTracker:
@@ -25,7 +26,8 @@ class KCFTracker:
                  saliency="",
                  cross_correlation=0,
                  saliency_percent=1,
-                 grabcut_mask_path='./figures/grabcut_masks/'):
+                 grabcut_mask_path='./figures/grabcut_masks/',
+                 optical_flow=False):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -306,6 +308,10 @@ class KCFTracker:
         elif self.saliency_percent < 1:
             self.name += '_' + str(self.saliency_percent)
 
+        if optical_flow:
+            self.optical_flow = optical_flow
+            self.name == '_optical_flow'
+
     def train(self, im, init_rect, seqname):
         """
         :param im: image should be of 3 dimension: M*N*C
@@ -327,6 +333,8 @@ class KCFTracker:
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
         grid_x = np.arange(np.floor(self.patch_size[1]/self.cell_size)) - np.floor(self.patch_size[1]/(2*self.cell_size))
+        if self.optical_flow:
+            self.im_prev = im
         if self.feature_type == 'resnet50':
             # this is an odd tweak to make the dimension uniform:
             if np.mod(self.patch_size[0], 2) == 0:
@@ -490,7 +498,18 @@ class KCFTracker:
         # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
         # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
         # filter hs is applied at the new target location.
+        if self.optical_flow:
+            prevgray = cv2.cvtColor(self.im_prev, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+            flow = cv2.calcOpticalFlowFarneback(prevgray, gray, 0.5, 3, 4, 3, 5, 1.2, 0)
+            if False:
+                plt.figure()
+                plt.subplot(1,2,1); plt.imshow(self.im_crop_old)
+                plt.subplot(1,2,2); plt.imshow(self.im_crop)
+                cv2.imshow('flow', self.draw_flow(gray/255., flow))
+
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+
         z = self.get_features()
         if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
             for l in range(len(z)):
@@ -1216,3 +1235,14 @@ class KCFTracker:
             mask2 = np.where((mask == 1) + (mask == 3), 255, 0).astype('uint8')
             output = cv2.bitwise_and(img2, img2, mask=mask2)
 
+    def draw_flow(self, img, flow, step=16):
+        h, w = img.shape[:2]
+        y, x = np.mgrid[step/2:h:step, step/2:w:step].reshape(2,-1).astype(int)
+        fx, fy = flow[y,x].T
+        lines = np.vstack([x, y, x+fx, y+fy]).T.reshape(-1, 2, 2)
+        lines = np.int32(lines + 0.5)
+        vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        cv2.polylines(vis, lines, 0, (0, 255, 0))
+        for (x1, y1), (x2, y2) in lines:
+            cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
+        return vis
