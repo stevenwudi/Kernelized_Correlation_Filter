@@ -105,7 +105,7 @@ def run_trackers(tracker, seqs, evalType):
 
     return seqResults
 
-def run_KCF_variant(tracker, seq, debug=False):
+def run_KCF_variant(tracker, seq, debug=True):
     from keras.preprocessing import image
     from visualisation_utils import plot_tracking_rect, show_precision
 

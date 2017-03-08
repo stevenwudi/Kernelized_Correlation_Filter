@@ -334,7 +334,7 @@ class KCFTracker:
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
         grid_x = np.arange(np.floor(self.patch_size[1]/self.cell_size)) - np.floor(self.patch_size[1]/(2*self.cell_size))
         if self.optical_flow:
-            self.im_prev = im
+            self.im_prev = im.transpose(1, 2, 0)
         if self.feature_type == 'resnet50':
             # this is an odd tweak to make the dimension uniform:
             if np.mod(self.patch_size[0], 2) == 0:
@@ -486,6 +486,27 @@ class KCFTracker:
         :param im: image should be of 3 dimension: M*N*C
         :return:
         """
+        # Quote from BMVC2014paper: Danelljan:
+        # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
+        # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
+        # filter hs is applied at the new target location.
+        if self.optical_flow:
+            prevgray = cv2.cvtColor(self.im_prev, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(im.transpose(1, 2, 0), cv2.COLOR_BGR2GRAY)
+            flow = cv2.calcOpticalFlowFarneback(prevgray, gray, 0.5, 3, 4, 3, 5, 1.2, 0)
+            x_mov = flow[:, :, 0].mean()
+            y_mov = flow[:, :, 1].mean()
+            self.im_prev = im.transpose(1, 2, 0)
+            self.pos[0] += x_mov
+            self.pos[1] += y_mov
+
+            print('Camera moved: {0}'.format([x_mov, y_mov]))
+            if False:
+                plt.figure()
+                plt.subplot(1,2,1); plt.imshow(self.im_crop_old)
+                plt.subplot(1,2,2); plt.imshow(self.im_crop)
+                cv2.imshow('flow', self.draw_flow(gray/255., flow))
+
         # extract and pre-process subwindow
         if self.feature_type == 'raw' and im.shape[0] == 3:
             im = im.transpose(1, 2, 0)/255.
@@ -493,20 +514,6 @@ class KCFTracker:
         elif self.feature_type == 'dsst':
             im = im.transpose(1, 2, 0) / 255.
             self.im_sz = im.shape
-
-        # Quote from BMVC2014paper: Danelljan:
-        # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
-        # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
-        # filter hs is applied at the new target location.
-        if self.optical_flow:
-            prevgray = cv2.cvtColor(self.im_prev, cv2.COLOR_BGR2GRAY)
-            gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
-            flow = cv2.calcOpticalFlowFarneback(prevgray, gray, 0.5, 3, 4, 3, 5, 1.2, 0)
-            if False:
-                plt.figure()
-                plt.subplot(1,2,1); plt.imshow(self.im_crop_old)
-                plt.subplot(1,2,2); plt.imshow(self.im_crop)
-                cv2.imshow('flow', self.draw_flow(gray/255., flow))
 
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
 
