@@ -82,7 +82,7 @@ def run_trackers(tracker, seqs, evalType):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(62, numSeq):
+    for idxSeq in range(82, numSeq):
         subS = seqs[idxSeq]
         print('{0}:{1}, total frame: {2}'.format(idxSeq + 1,subS.name, subS.endFrame - subS.startFrame))
         if not OVERWRITE_RESULT:

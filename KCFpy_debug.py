@@ -308,8 +308,8 @@ class KCFTracker:
         elif self.saliency_percent < 1:
             self.name += '_' + str(self.saliency_percent)
 
+        self.optical_flow = optical_flow
         if optical_flow:
-            self.optical_flow = optical_flow
             self.name == '_optical_flow'
 
     def train(self, im, init_rect, seqname):
@@ -493,9 +493,13 @@ class KCFTracker:
         if self.optical_flow:
             prevgray = cv2.cvtColor(self.im_prev, cv2.COLOR_BGR2GRAY)
             gray = cv2.cvtColor(im.transpose(1, 2, 0), cv2.COLOR_BGR2GRAY)
-            flow = cv2.calcOpticalFlowFarneback(prevgray, gray, 0.5, 3, 4, 3, 5, 1.2, 0)
+
+            flow = cv2.calcOpticalFlowFarneback(prev=prevgray, next=gray,
+                                                pyr_scale=.5, levels=5, winsize=15,
+                                                iterations=3, poly_n=5, poly_sigma=1.2, flags=0)
             x_mov = flow[:, :, 0].mean()
             y_mov = flow[:, :, 1].mean()
+            #cv2.imshow('flow', self.draw_flow(gray / 255., flow))
             self.im_prev = im.transpose(1, 2, 0)
             self.pos[0] += x_mov
             self.pos[1] += y_mov
@@ -503,7 +507,7 @@ class KCFTracker:
             print('Camera moved: {0}'.format([x_mov, y_mov]))
             if False:
                 plt.figure()
-                plt.subplot(1,2,1); plt.imshow(self.im_crop_old)
+                plt.subplot(1,2,1); plt.imshow(self.im_prev)
                 plt.subplot(1,2,2); plt.imshow(self.im_crop)
                 cv2.imshow('flow', self.draw_flow(gray/255., flow))
 
