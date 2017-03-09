@@ -301,6 +301,7 @@ class KCFTracker:
         self.name += name_suffix
         if self.saliency:
             self.name += '_' + self.saliency
+            self.use_saliency = True
         if self.cross_correlation > 0:
             self.name += '_xcorr' + str(self.cross_correlation)
         elif self.saliency_percent < 1:
@@ -389,7 +390,12 @@ class KCFTracker:
                 # we need to get rid of them!!!!!!!!!!!!!!!!!
                 self.feature_valid_idx = []
             for l in range(len(self.x)):
-                if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+                if np.min(self.target_sz) < 20:
+                    # it the target size is too small, we don't use grabcut method
+                    self.use_saliency = False
+                else:
+                    self.use_saliency = True
+                if self.saliency == 'grabcut' and self.use_saliency:
                     import matplotlib.image as mpimg
                     from skimage.transform import resize
                     self.img_grabcut = mpimg.imread(self.grabcut_mask_path + seqname + ".png")
@@ -404,7 +410,7 @@ class KCFTracker:
                     for filter_num in range(self.x[l].shape[2]):
                         f = self.x[l][:,:,filter_num]
                         corr_list_my[filter_num] = np.multiply((f-f.mean()) / f.std(), (t-t_mean)/t_std).sum() / N
-
+                        #corr_list_my[filter_num] = np.multiply((f - f.mean()) / f.std(), (t - t_mean) / t_std).sum() / N
                     filters = self.x[l].transpose(2,0,1)
                     #### Note for filters especially for higher level features, there could be zero response
                     # which means that those features are totally irrelavant here but will have high STD
@@ -492,7 +498,7 @@ class KCFTracker:
         # filter hs is applied at the new target location.
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         z = self.get_features()
-        if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+        if self.saliency == 'grabcut' and self.use_saliency:
             for l in range(len(z)):
                 z[l] = z[l][:, :, self.feature_valid_idx[l]]
                 if self.cross_correlation > 0:
@@ -661,7 +667,7 @@ class KCFTracker:
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
         x_new = self.get_features()
         if self.feature_type == 'multi_cnn':
-            if self.saliency == 'grabcut' and np.min(self.target_sz) > 20:
+            if self.saliency == 'grabcut' and self.use_saliency:
                 for l in range(len(x_new)):
                     x_new[l] = x_new[l][:, :, self.feature_valid_idx[l]]
                     if self.cross_correlation > 0:

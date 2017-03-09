@@ -40,10 +40,12 @@ def main():
         tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
                                sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
                                model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                               adaptation_rate_range_max=0.002 * 2,
+                               adaptation_rate_scale_range_max=0.005 * 2,
                                saliency='grabcut', saliency_percent=0.5,
-                             grabcut_mask_path='../../UAV/UAV123_10fps/grab_cut_figures/')
+                               grabcut_mask_path='../../UAV/UAV123_10fps/grab_cut_figures/')
     else:
-        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
+        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_grabcut_0.5')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'
@@ -89,7 +91,7 @@ def run_trackers(tracker, seqs, evalType):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(0, numSeq):
+    for idxSeq in range(11, numSeq):
         subS = seqs[idxSeq]
         print('{0}:{1}, total frame: {2}'.format(idxSeq + 1, subS.name, subS.endFrame - subS.startFrame))
         if not OVERWRITE_RESULT:
