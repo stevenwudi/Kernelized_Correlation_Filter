@@ -142,5 +142,8 @@ fabric.properties
 /results
 /results_TB100
 /results_TB50
+
 /results_UAV123
 /results_UAV_10fps
+
+/grab_cut_figures

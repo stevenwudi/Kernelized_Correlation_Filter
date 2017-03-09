@@ -7,6 +7,7 @@ modified by Di Wu
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imresize
+import cv2
 
 
 class KCFTracker:
@@ -25,7 +26,8 @@ class KCFTracker:
                  saliency="",
                  cross_correlation=0,
                  saliency_percent=1,
-                 grabcut_mask_path='./figures/grabcut_masks/'):
+                 grabcut_mask_path='./figures/grabcut_masks/',
+                 optical_flow=False):
         """
         object_example is an image showing the object to track
         feature_type:
@@ -307,6 +309,10 @@ class KCFTracker:
         elif self.saliency_percent < 1:
             self.name += '_' + str(self.saliency_percent)
 
+        self.optical_flow = optical_flow
+        if optical_flow:
+            self.name == '_optical_flow'
+
     def train(self, im, init_rect, seqname):
         """
         :param im: image should be of 3 dimension: M*N*C
@@ -328,6 +334,8 @@ class KCFTracker:
         self.output_sigma = np.sqrt(np.prod(self.target_sz)) * self.spatial_bandwidth_sigma_factor
         grid_y = np.arange(np.floor(self.patch_size[0]/self.cell_size)) - np.floor(self.patch_size[0]/(2*self.cell_size))
         grid_x = np.arange(np.floor(self.patch_size[1]/self.cell_size)) - np.floor(self.patch_size[1]/(2*self.cell_size))
+        if self.optical_flow:
+            self.im_prev = im.transpose(1, 2, 0)
         if self.feature_type == 'resnet50':
             # this is an odd tweak to make the dimension uniform:
             if np.mod(self.patch_size[0], 2) == 0:
@@ -484,6 +492,51 @@ class KCFTracker:
         :param im: image should be of 3 dimension: M*N*C
         :return:
         """
+        # Quote from BMVC2014paper: Danelljan:
+        # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
+        # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
+        # filter hs is applied at the new target location.
+        if self.optical_flow:
+            prevgray = cv2.cvtColor(self.im_prev, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(im.transpose(1, 2, 0), cv2.COLOR_BGR2GRAY)
+
+            flow = cv2.calcOpticalFlowFarneback(prev=prevgray, next=gray,
+                                                pyr_scale=.5, levels=5, winsize=15,
+                                                iterations=3, poly_n=5, poly_sigma=1.2, flags=0)
+            # we exclude the region of interest to eliminate the motion from the target
+            flow = self.exclude_subwindow_coorindate(flow, self.pos, self.patch_size)
+            mov_x_idx = np.logical_or(flow[:, :, 0] > 10e-4 , flow[:, :, 0] < -10e-4)
+            mov_y_idx = np.logical_or(flow[:, :, 1] > 10e-4 , flow[:, :, 1] < -10e-4)
+            x_mov = flow[mov_x_idx, 0].mean()
+            y_mov = flow[mov_y_idx, 1].mean()
+            #cv2.imshow('flow', self.draw_flow(gray / 255., flow))
+            self.im_prev = im.transpose(1, 2, 0)
+            self.pos[0] += x_mov
+            self.pos[1] += y_mov
+            print('Camera moved: {0}'.format([x_mov, y_mov]))
+            if False:
+                plt.figure()
+                plt.subplot(1,2,1); plt.imshow(self.im_prev)
+                plt.subplot(1,2,2); plt.imshow(self.im_crop)
+                cv2.imshow('flow', self.draw_flow(gray/255., flow))
+
+                # motion boundaries
+                flow_x_norm = (flow[:, :, 0] - flow[:, :, 0].min()) / (flow[:, :, 0].max() - flow[:, :, 0].min()) * 255
+                laplacian_x = cv2.Laplacian(flow_x_norm.astype('float64'), cv2.CV_64F)
+                flow_y_norm = (flow[:, :, 1] - flow[:, :, 1].min()) / (flow[:, :, 1].max() - flow[:, :, 1].min()) * 255
+                laplacian_y = cv2.Laplacian(flow_y_norm.astype('float64'), cv2.CV_64F)
+
+
+                plt.subplot(2, 2, 1), plt.imshow(flow_x_norm, cmap='gray')
+                plt.title('Original'), plt.xticks([]), plt.yticks([])
+                plt.subplot(2, 2, 2), plt.imshow(laplacian_x, cmap='gray')
+                plt.title('Laplacian'), plt.xticks([]), plt.yticks([])
+
+                laplacian_x_return = laplacian_x / 255 * (flow[:, :, 0].max() - flow[:, :, 0].min()) + flow[:, :, 0].min()
+                laplacian_y_return = laplacian_y / 255 * (flow[:, :, 1].max() - flow[:, :, 1].min()) + flow[:, :, 1].min()
+
+                laplacian = self.exclude_subwindow_coorindate(laplacian_x_return, self.pos, self.patch_size)
+
         # extract and pre-process subwindow
         if self.feature_type == 'raw' and im.shape[0] == 3:
             im = im.transpose(1, 2, 0)/255.
@@ -492,11 +545,8 @@ class KCFTracker:
             im = im.transpose(1, 2, 0) / 255.
             self.im_sz = im.shape
 
-        # Quote from BMVC2014paper: Danelljan:
-        # "In visual tracking scenarios, the scale difference between two frames is typically smaller compared to the
-        # translation. Therefore, we first apply the translation filter hf given a new frame, afterwards the scale
-        # filter hs is applied at the new target location.
         self.im_crop = self.get_subwindow(im, self.pos, self.patch_size)
+
         z = self.get_features()
         if self.saliency == 'grabcut' and self.use_saliency:
             for l in range(len(z)):
@@ -856,6 +906,39 @@ class KCFTracker:
             #     x = imresize(out.copy(), self.resize_size)
             #     out = np.multiply(x, self.cos_window_patch[:, :, None])
             return out
+
+    def exclude_subwindow_coorindate(self, flow, pos, sz):
+        """
+        Obtain sub-window from image, with replication-padding.
+        Returns sub-window of image IM centered at POS ([y, x] coordinates),
+        with size SZ ([height, width]). If any pixels are outside of the image,
+        they will replicate the values at the borders.
+
+        The subwindow is also normalized to range -0.5 .. 0.5, and the given
+        cosine window COS_WINDOW is applied
+        (though this part could be omitted to make the function more general).
+        """
+
+        if np.isscalar(sz):  # square sub-window
+            sz = [sz, sz]
+
+        ys = np.floor(pos[0]) + np.arange(sz[0], dtype=int) - np.floor(sz[0] / 2)
+        xs = np.floor(pos[1]) + np.arange(sz[1], dtype=int) - np.floor(sz[1] / 2)
+
+        ys = ys.astype(int)
+        xs = xs.astype(int)
+
+        # check for out-of-bounds coordinates and set them to the values at the borders
+        ys[ys < 0] = 0
+        ys[ys >= self.im_sz[0]] = self.im_sz[0] - 1
+
+        xs[xs < 0] = 0
+        xs[xs >= self.im_sz[1]] = self.im_sz[1] - 1
+
+        # exclude image patch image
+        c = np.array(range(2))
+        flow[np.ix_(ys, xs, c)] = 0
+        return flow
 
     def fft2(self, x):
         """
@@ -1222,3 +1305,14 @@ class KCFTracker:
             mask2 = np.where((mask == 1) + (mask == 3), 255, 0).astype('uint8')
             output = cv2.bitwise_and(img2, img2, mask=mask2)
 
+    def draw_flow(self, img, flow, step=16):
+        h, w = img.shape[:2]
+        y, x = np.mgrid[step/2:h:step, step/2:w:step].reshape(2,-1).astype(int)
+        fx, fy = flow[y,x].T
+        lines = np.vstack([x, y, x+fx, y+fy]).T.reshape(-1, 2, 2)
+        lines = np.int32(lines + 0.5)
+        vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        cv2.polylines(vis, lines, 0, (0, 255, 0))
+        for (x1, y1), (x2, y2) in lines:
+            cv2.circle(vis, (x1, y1), 1, (0, 255, 0), -1)
+        return vis
