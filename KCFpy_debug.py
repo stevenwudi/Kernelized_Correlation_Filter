@@ -497,19 +497,39 @@ class KCFTracker:
             flow = cv2.calcOpticalFlowFarneback(prev=prevgray, next=gray,
                                                 pyr_scale=.5, levels=5, winsize=15,
                                                 iterations=3, poly_n=5, poly_sigma=1.2, flags=0)
-            x_mov = flow[:, :, 0].mean()
-            y_mov = flow[:, :, 1].mean()
+            # we exclude the region of interest to eliminate the motion from the target
+            flow = self.exclude_subwindow_coorindate(flow, self.pos, self.patch_size)
+            mov_x_idx = np.logical_or(flow[:, :, 0] > 10e-4 , flow[:, :, 0] < -10e-4)
+            mov_y_idx = np.logical_or(flow[:, :, 1] > 10e-4 , flow[:, :, 1] < -10e-4)
+            x_mov = flow[mov_x_idx, 0].mean()
+            y_mov = flow[mov_y_idx, 1].mean()
             #cv2.imshow('flow', self.draw_flow(gray / 255., flow))
             self.im_prev = im.transpose(1, 2, 0)
             self.pos[0] += x_mov
             self.pos[1] += y_mov
-
             print('Camera moved: {0}'.format([x_mov, y_mov]))
             if False:
                 plt.figure()
                 plt.subplot(1,2,1); plt.imshow(self.im_prev)
                 plt.subplot(1,2,2); plt.imshow(self.im_crop)
                 cv2.imshow('flow', self.draw_flow(gray/255., flow))
+
+                # motion boundaries
+                flow_x_norm = (flow[:, :, 0] - flow[:, :, 0].min()) / (flow[:, :, 0].max() - flow[:, :, 0].min()) * 255
+                laplacian_x = cv2.Laplacian(flow_x_norm.astype('float64'), cv2.CV_64F)
+                flow_y_norm = (flow[:, :, 1] - flow[:, :, 1].min()) / (flow[:, :, 1].max() - flow[:, :, 1].min()) * 255
+                laplacian_y = cv2.Laplacian(flow_y_norm.astype('float64'), cv2.CV_64F)
+
+
+                plt.subplot(2, 2, 1), plt.imshow(flow_x_norm, cmap='gray')
+                plt.title('Original'), plt.xticks([]), plt.yticks([])
+                plt.subplot(2, 2, 2), plt.imshow(laplacian_x, cmap='gray')
+                plt.title('Laplacian'), plt.xticks([]), plt.yticks([])
+
+                laplacian_x_return = laplacian_x / 255 * (flow[:, :, 0].max() - flow[:, :, 0].min()) + flow[:, :, 0].min()
+                laplacian_y_return = laplacian_y / 255 * (flow[:, :, 1].max() - flow[:, :, 1].min()) + flow[:, :, 1].min()
+
+                laplacian = self.exclude_subwindow_coorindate(laplacian_x_return, self.pos, self.patch_size)
 
         # extract and pre-process subwindow
         if self.feature_type == 'raw' and im.shape[0] == 3:
@@ -880,6 +900,39 @@ class KCFTracker:
             #     x = imresize(out.copy(), self.resize_size)
             #     out = np.multiply(x, self.cos_window_patch[:, :, None])
             return out
+
+    def exclude_subwindow_coorindate(self, flow, pos, sz):
+        """
+        Obtain sub-window from image, with replication-padding.
+        Returns sub-window of image IM centered at POS ([y, x] coordinates),
+        with size SZ ([height, width]). If any pixels are outside of the image,
+        they will replicate the values at the borders.
+
+        The subwindow is also normalized to range -0.5 .. 0.5, and the given
+        cosine window COS_WINDOW is applied
+        (though this part could be omitted to make the function more general).
+        """
+
+        if np.isscalar(sz):  # square sub-window
+            sz = [sz, sz]
+
+        ys = np.floor(pos[0]) + np.arange(sz[0], dtype=int) - np.floor(sz[0] / 2)
+        xs = np.floor(pos[1]) + np.arange(sz[1], dtype=int) - np.floor(sz[1] / 2)
+
+        ys = ys.astype(int)
+        xs = xs.astype(int)
+
+        # check for out-of-bounds coordinates and set them to the values at the borders
+        ys[ys < 0] = 0
+        ys[ys >= self.im_sz[0]] = self.im_sz[0] - 1
+
+        xs[xs < 0] = 0
+        xs[xs >= self.im_sz[1]] = self.im_sz[1] - 1
+
+        # exclude image patch image
+        c = np.array(range(2))
+        flow[np.ix_(ys, xs, c)] = 0
+        return flow
 
     def fft2(self, x):
         """
