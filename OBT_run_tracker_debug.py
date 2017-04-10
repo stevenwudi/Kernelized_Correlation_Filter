@@ -12,22 +12,29 @@ import sys
 from config import *
 from scripts import *
 
-from KCFpy_debug import KCFTracker
 OVERWRITE_RESULT = True
+
+class Tracker:
+    def __init__(self, name=''):
+        self.name=name
+
+#if OVERWRITE_RESULT:
+from KCFpy_debug import KCFTracker
+    #from KCF_HDT import KCFTracker
 
 
 def main(argv):
-    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                           sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                           saliency='grabcut', cross_correlation=0.5)]
-
-                           # reg_method=1,
-                           # reg_min=0,
-                           # reg_mul=1)]
-                           # model_path='./trained_models/multicnn_maximum_best_valid_sequential_1.h5',
-                           # cnn_maximum=True)]
-    #evalTypes = ['OPE', 'SRE', 'TRE']
+    #OVERWRITE_RESULT:
+    trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='',
+                           sub_sub_sub_feature_type='',
+                           load_model=True, vgglayer='',
+                           model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5')]
+    #
+    # trackers = [KCFTracker(feature_type='vgg', vgglayer='block3', kernel='linear',
+    #                            padding=2.2)]
+    #
+    # else:
+    #     trackers = [Tracker(name='KCF_HDT_dsst')]
     evalTypes = ['OPE']
     loadSeqs = 'TB100'
     try:
@@ -57,7 +64,7 @@ def main(argv):
         butil.setup_seqs(loadSeqs)
 
     print('Starting benchmark for {0} trackers, evalTypes : {1}'.format(
-        trackers[0].name, evalTypes))
+        len(trackers), evalTypes))
     for evalType in evalTypes:
         seqNames = butil.get_seq_names(loadSeqs)
         seqs = butil.load_seq_configs(seqNames)
@@ -96,6 +103,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
         os.makedirs(tmpRes_path)
 
     numSeq = len(seqs)
+
     trackerResults = dict((t, list()) for t in trackers)
     ##################################################
     # chose sequence to run from below
@@ -183,7 +191,7 @@ def run_KCF_variant(tracker, seq, debug=False):
     if debug:
         tracker.precisions = show_precision(np.array(tracker.res), np.array(seq.gtRect), seq.name)
 
-    res = {'type': tracker.type, 'res': tracker.res, 'fps': tracker.fps}
+    res = {'type': 'rect', 'res': tracker.res, 'fps': tracker.fps}
 
     return tracker, res
 

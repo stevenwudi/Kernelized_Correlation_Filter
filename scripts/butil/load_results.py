@@ -129,6 +129,8 @@ def load_scores(evalType, tracker, testname, RESULT_SRC):
         src = os.path.join(resultSRC, tracker + '/scores_{0}'.format(testname))
         if not os.path.exists(src):
             src = os.path.join(resultSRC, tracker + '/scores')
+    if not os.path.exists(src):
+        return []
     attrNames = os.listdir(src)
     attrs = []
     for attrName in attrNames:

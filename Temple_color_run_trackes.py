@@ -4,16 +4,12 @@ stevenwudi@gmail.com
 """
 from __future__ import print_function
 from scripts import Temple_color_script, UAV_script
-#from KCFpy_debug import KCFTracker
 import os
 import numpy as np
 import time
 from scripts import butil
 from scripts.model.result import Result
 
-
-# some global variables here
-OVERWRITE_RESULT = False
 SETUP_SEQ = False
 SAVE_RESULT = True
 SRC_DIR = '/home/stevenwudi/Documents/Python_Project/Temple-color-128/Temple-color-128/'
@@ -21,21 +17,28 @@ ANNO_DIR= '/home/stevenwudi/Documents/Python_Project/Temple-color-128/cfg_json/'
 RESULT_SRC = './results_temple_color/{0}/'  # '{0} : OPE, SRE, TRE'
 
 
-class Tracker:
-    def __init__(self, name=''):
-        self.name=name
+# some global variables here
+OVERWRITE_RESULT = True
+if OVERWRITE_RESULT:
+    from KCFpy_debug import KCFTracker
+else:
+    class Tracker:
+        def __init__(self, name=''):
+            self.name = name
 
 
 def main():
-    # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-    #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-    #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-    #                        name_suffix='_best_valid_CNN')
-    tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_hdt_best_valid_CNN')
-    # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-    #                        sub_sub_feature_type='adapted_lr_hdt', load_model=True, vgglayer='',
-    #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-    #                        name_suffix='_best_valid_CNN')
+    if OVERWRITE_RESULT:
+        # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+        #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+        #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+        #                        name_suffix='_best_valid_CNN')
+        tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dnn_scale',
+                               load_model=True,
+                               model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+                             name_suffix='_best_valid_CNN')
+    else:
+        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
     evalTypes = ['OPE']
     if SETUP_SEQ:
         print('Setup sequences ...')

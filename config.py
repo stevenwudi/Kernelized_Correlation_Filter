@@ -9,7 +9,7 @@ WORKDIR = os.path.abspath('.')
 SEQ_SRC = '/home/stevenwudi/Documents/Python_Project/OBT/tracker_benchmark/data/'
 
 #RESULT_SRC = './results/{0}/' # '{0} : OPE, SRE, TRE'
-RESULT_SRC = './results_TB100/{0}/' # '{0} : OPE, SRE, TRE'
+RESULT_SRC = './results_TB50/{0}/' # '{0} : OPE, SRE, TRE'
 
 
 SETUP_SEQ = False
@@ -43,7 +43,8 @@ thresholdSetOverlap = [x/float(20) for x in range(21)]
 thresholdSetError = range(0, 51)
 
 # for drawing plot
-MAXIMUM_LINES = 13
-LINE_COLORS = ['b','g','r','c','m','y','k', '#880015', '#FF7F27', '#00A2E8', '#880015', '#FF7F27', '#00A2E8']
+MAXIMUM_LINES = 20
+LINE_COLORS = ['b','g','c','m','y','k','#880015', '#FF7F27', '#00A2E8', '#880015', '#FF7F27', '#00A2E8',
+               'b', 'g','c', 'm', 'y', 'k' ,'#880015', '#FF7F27', '#00A2E8', '#880015', '#FF7F27', '#00A2E8',]
 
 m = None    # matlab engine

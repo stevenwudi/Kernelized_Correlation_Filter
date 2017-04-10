@@ -1,0 +1,1 @@
+{"name": "LR ", "desc": "Low Resolution: at least one ground-truth bounding box has less than 400 pixels.", "tracker": {"name": "Struck"}, "evalType": "OPE", "seqs": [], "overlap": 0, "error": 0, "overlapScores": [], "errorNum": [], "successRateList": [], "precisionRateList": []}

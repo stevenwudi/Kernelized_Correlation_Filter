@@ -27,17 +27,21 @@ if OVERWRITE_RESULT:
 else:
     class Tracker:
         def __init__(self, name=''):
-            self.name=name
+            self.name = name
 
 
 def main():
     if OVERWRITE_RESULT:
-        tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                               sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+        # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+        #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+        #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+        #                        name_suffix='_best_valid_CNN')
+        tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dnn_scale',
+                               load_model=True,
                                model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                               name_suffix='_best_valid_CNN')
+                             name_suffix='_best_valid_CNN')
     else:
-        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')
+        tracker = Tracker(name='HDT')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'

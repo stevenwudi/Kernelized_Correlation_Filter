@@ -15,7 +15,8 @@ def main():
         scoreList = []
         for t in trackers:
             score = butil.load_scores(evalType, t, testname, result_src)
-            scoreList.append(score)
+            if score:
+                scoreList.append(score)
         plot_graph_success(scoreList, i*2, evalType, testname)
         plot_graph_precision(scoreList, i*2+1, evalType, testname)
     plt.show()

@@ -12,7 +12,7 @@ import sys
 from config import *
 from scripts import *
 
-OVERWRITE_RESULT = True
+OVERWRITE_RESULT = False
 
 class Tracker:
     def __init__(self, name=''):
@@ -24,13 +24,17 @@ if OVERWRITE_RESULT:
 
 def main(argv):
     if OVERWRITE_RESULT:
-        trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
-                               sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
-                               model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                               saliency='grabcut', saliency_percent=0.5)]
+        # trackers = [KCFTracker(feature_type='multi_cnn', sub_feature_type='dnn_scale',
+        #                        load_model=True,
+        #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5')]
+        trackers = [KCFTracker(feature_type='vgg', vgglayer='block3', kernel='linear',
+                               padding=2.2)]
+
+        # trackers = [KCFTracker(feature_type='HDT', kernel='gaussian',
+        #                        padding=2.2)]
 
     else:
-        trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')]
+        trackers = [Tracker(name='KCF_multi_cnn_dsst')]
     evalTypes = ['OPE']
     loadSeqs = 'TB50'
     try:
@@ -178,7 +182,7 @@ def run_KCF_variant(tracker, seq, debug=False):
             print("pos", np.array(tracker.res[-1]).astype(int))
             print("gt", seq.gtRect[frame])
             print("\n")
-            plot_tracking_rect(frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
+            plot_tracking_rect(seq.name, frame + seq.startFrame, img_rgb, tracker, seq.gtRect)
 
     total_time = time.time() - start_time
     tracker.fps = len(tracker.res) / total_time
@@ -187,7 +191,7 @@ def run_KCF_variant(tracker, seq, debug=False):
     if debug:
         tracker.precisions = show_precision(np.array(tracker.res), np.array(seq.gtRect), seq.name)
 
-    res = {'type': tracker.type, 'res': tracker.res, 'fps': tracker.fps}
+    res = {'type': 'rect', 'res': tracker.res, 'fps': tracker.fps}
 
     return tracker, res
 

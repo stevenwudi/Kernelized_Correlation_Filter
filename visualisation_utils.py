@@ -100,7 +100,8 @@ def plot_tracking_rect(seqname, frame, img_rgb, tracker, gtRect, wait_second=0.0
 
     plt.subplot(222)
     if tracker.feature_type == 'vgg' or tracker.feature_type == 'resnet50' or tracker.feature_type == 'vgg_rnn' \
-            or tracker.feature_type == 'cnn' or tracker.feature_type == 'multi_cnn':
+            or tracker.feature_type == 'cnn' or tracker.feature_type == 'multi_cnn' \
+            or tracker.feature_type == 'HDT':
         tracker.im_crop = tracker.im_crop.transpose(1, 2, 0) / 255.
     # if tracker.feature_type == 'cnn':
     #     im_crop = tracker.im_crop / 255.
@@ -111,7 +112,7 @@ def plot_tracking_rect(seqname, frame, img_rgb, tracker, gtRect, wait_second=0.0
     if tracker.feature_type == 'vgg' or tracker.feature_type == 'resnet50' or tracker.feature_type == 'vgg_rnn' or tracker.feature_type == 'cnn':
         features = tracker.x.transpose(2, 0, 1) / tracker.x.max()
         plt.imshow(make_mosaic(features[:9], 3, 3, border=1))
-    elif tracker.feature_type == 'multi_cnn':
+    elif tracker.feature_type == 'multi_cnn' or tracker.feature_type == 'HDT':
         features = tracker.x[0].transpose(2, 0, 1) / tracker.x[0].max()
         plt.imshow(make_mosaic(features[:16], 4, 4, border=1))
         plt.title('%s, FIRST conv layer output' % tracker.feature_type)
@@ -122,9 +123,13 @@ def plot_tracking_rect(seqname, frame, img_rgb, tracker, gtRect, wait_second=0.0
         plt.title('Feature used is %s' % tracker.feature_type)
 
     plt.subplot(224)
-    if tracker.feature_type == 'multi_cnn':
+    if tracker.feature_type == 'multi_cnn' and not tracker.sub_sub_sub_feature_type == 'maximum_res':
         plt.imshow(make_mosaic(tracker.response_all[:5], 2, 3, border=5))
         plt.title('response [%s]' % ', '.join("{0:.2f}".format(x) for x in tracker.max_list))
+    elif tracker.feature_type == 'HDT':
+        plt.imshow(make_mosaic(tracker.response_all[:5], 2, 3, border=5))
+        plt.title('R is: {0} \n W is: {1}'.format(', '.join("{0:.3f}".format(x) for x in tracker.max_list),
+                                                    ', '.join("{0:.3f}".format(x) for x in tracker.W)))
     else:
         plt.imshow(tracker.response)
         plt.title('response')
@@ -346,4 +351,18 @@ def plot_tracking_result(frame, img_rgb, result, gtRect, seqName,wait_second=0.5
     plt.title('Seq: %s, Total frame: %d, current: %d' % (seqName, len(gtRect), frame))
     plt.draw()
     plt.waitforbuttonpress(wait_second)
+
+
+def pyramid_response(response):
+    rows, cols = response[0].shape
+
+    composite_image = np.ones((rows, cols + cols // 2), dtype=np.double)
+    composite_image[:rows, :cols] = response[0]
+    i_row = 0
+    for p in response[1:]:
+        n_rows, n_cols = p.shape[:2]
+        composite_image[i_row:i_row + n_rows, cols:cols + n_cols] = p
+        i_row += n_rows
+
+    return composite_image
 

@@ -21,7 +21,7 @@ EVAL_SEQ = 'UAV123_10fps'
 IMG_DIR = os.path.join(SRC_DIR, 'data_seq', EVAL_SEQ)
 ANNO_DIR = os.path.join(SRC_DIR, 'anno', EVAL_SEQ)
 SETUP_SEQ = False
-OVERWRITE_RESULT = True
+OVERWRITE_RESULT = False
 
 if OVERWRITE_RESULT:
     from KCFpy_debug import KCFTracker
@@ -35,17 +35,27 @@ def main():
     if OVERWRITE_RESULT:
         # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
         #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+        #
         #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
         #                        name_suffix='_best_valid_CNN')
-        tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+        # tracker = KCFTracker(feature_type='multi_cnn', sub_feature_type='dsst',
+        #                        sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
+        #                        model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
+        #                        adaptation_rate_range_max=0.002,
+        #                        adaptation_rate_scale_range_max=0.005,
+        #                        saliency='grabcut', saliency_percent=0.5,
+        #                        grabcut_mask_path='../../UAV/UAV123_10fps/grab_cut_figures/',
+        #                        optical_flow=True)
+        tracker = KCFTracker(feature_type='HDT', sub_feature_type='dsst',
                                sub_sub_feature_type='adapted_lr', load_model=True, vgglayer='',
                                model_path='./trained_models/CNN_Model_OBT100_multi_cnn_best_cifar_big_valid.h5',
-                               adaptation_rate_range_max=0.002 * 2,
-                               adaptation_rate_scale_range_max=0.005 * 2,
+                               adaptation_rate_range_max=0.002,
+                               adaptation_rate_scale_range_max=0.005,
                                saliency='grabcut', saliency_percent=0.5,
-                               grabcut_mask_path='../../UAV/UAV123_10fps/grab_cut_figures/')
+                               grabcut_mask_path='../../UAV/UAV123_10fps/grab_cut_figures/',
+                               optical_flow=True)
     else:
-        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_grabcut_0.5')
+        tracker = Tracker(name='KCFmulti_cnn_dsst_adapted_lr_grabcut_0.5_optical_flow')
     # evalTypes = ['OPE', 'SRE', 'TRE']
     evalTypes = ['OPE']
     loadSeqs = 'UAV123'
@@ -91,7 +101,7 @@ def run_trackers(tracker, seqs, evalType):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(11, numSeq):
+    for idxSeq in range(0, numSeq):
         subS = seqs[idxSeq]
         print('{0}:{1}, total frame: {2}'.format(idxSeq + 1, subS.name, subS.endFrame - subS.startFrame))
         if not OVERWRITE_RESULT:

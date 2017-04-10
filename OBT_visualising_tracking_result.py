@@ -23,7 +23,7 @@ class Tracker:
 
 def main(argv):
     #trackers = [Tracker(name='DSST')]
-    trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_best_valid_CNN')]
+    trackers = [Tracker(name='KCF_multi_cnn_dnn_scale')]
     #trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_hdtadl_0.002')]
     #trackers = [Tracker(name='KCFmulti_cnn_dsst_adapted_lr_grabcut_xcorr0.5')]
 
@@ -99,7 +99,7 @@ def run_trackers(trackers, seqs, evalType, shiftTypeSet):
     ##################################################
     # chose sequence to run from below
     ##################################################
-    for idxSeq in range(53, numSeq):
+    for idxSeq in range(6, numSeq):
         s = seqs[idxSeq]
         subSeqs, subAnno = butil.get_sub_seqs(s, 20.0, evalType)
 

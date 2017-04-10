@@ -17,7 +17,7 @@ OVERWRITE_RESULT = False
 Tracker_names = ['ASLA', 'CSK', 'DSST', 'IVT', 'KCF_GaussHog', 'KCF_LinearGray', 'KCF_LinearHog', 'MEEM', 'MUSTER',
                    'OAB', 'SAMF', 'SRDCF', 'Struck', 'TLD']
 
-
+Tracker_names = ['HDT_code']
 
 class Tracker:
     def __init__(self, name=''):

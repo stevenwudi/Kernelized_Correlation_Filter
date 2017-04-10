@@ -50,6 +50,8 @@ def calc_seq_err_robust(results, rect_anno):
 
     rectMat[0] = rect_anno[0]
     center = [[r[0]+(r[2]-1)/2.0, r[1]+(r[3]-1)/2.0] for r in rectMat]
+    if len(centerGT) < seq_length:
+        seq_length = len(centerGT)
     errCenter = [round(scripts.butil.ssd(center[i], centerGT[i]),4)
         for i in range(seq_length)]
 

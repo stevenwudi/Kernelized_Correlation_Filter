@@ -3,7 +3,7 @@ import numpy as np
 import math
 
 from scripts import *
-if False:
+if True:
     RESULT_SRC = './results_UAV123/{0}/'  # '{0} : OPE, SRE, TRE'
 else:
     RESULT_SRC = './results_UAV_10fps/{0}/' # '{0} : OPE, SRE, TRE'
@@ -17,6 +17,9 @@ def main():
         trackers = os.listdir(result_src)
         scoreList = []
         for t in trackers:
+            if t == 'KCF_multi_cnn_dnn_scale_best_valid_CNN':
+                # we don't want this yet
+                continue
             score = butil.load_scores(evalType, t, testname, RESULT_SRC)
             scoreList.append(score)
         plot_graph_success(scoreList, i*2, evalType, testname)
@@ -49,6 +52,7 @@ def plot_graph_success(scoreList, fignum, evalType, testname):
                         plt.plot(thresholdSetOverlap, attr.successRateList,
                                  c=LINE_COLORS[i], label='{0} [{1:.3f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
                     elif tracker['name'][:3] =='HDT':
+                        tracker['name'] = "HDT_cvpr16"
                         plt.plot(thresholdSetOverlap, attr.successRateList,
                             c = LINE_COLORS[i], label='{0} [{1:.3f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls = ls)
                     elif tracker['name'] == 'KCFraw_colour':
@@ -112,6 +116,7 @@ def plot_graph_precision(scoreList, fignum, evalType, testname):
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
                                  label='{0} [{1:.3f}]'.format('MUSTer_CVPR15', ave), lw=2.0, ls=ls)
                     elif tracker['name'][:3] == 'HDT':
+                        tracker['name'] = "HDT_cvpr16"
                         plt.plot(thresholdSetError, attr.precisionRateList, c=LINE_COLORS[i],
                                  label='{0} [{1:.3f}]'.format(tracker['name'].upper(), ave), lw=2.0, ls=ls)
                     elif tracker['name'] == 'KCFraw_colour':
